@@ -8,10 +8,19 @@ client = OpenRouter(
     server_url="https://ai.hackclub.com/proxy/v1"
 )
 
-def generate_drug_analysis(drug_name: str, variants: List[Dict]) -> str:
+def generate_drug_analysis(drug_name: str, variants: List[Dict]) -> Dict:
     """Generate AI analysis for any drug based on user's genetic data"""
     
-    fallback = f"Unable to generate analysis for {drug_name}. Please check your API key."
+    fallback = {
+        "risk_label": "Unknown",
+        "severity": "Unknown",
+        "confidence_score": 0.0,
+        "recommendation": {
+            "action": "Consult healthcare provider",
+            "details": f"Unable to generate analysis for {drug_name}. Please check your API configuration."
+        },
+        "explanation": f"Analysis unavailable for {drug_name}. Please ensure API key is configured."
+    }
     
     if not os.getenv("OPENROUTER_API_KEY"):
         return fallback
@@ -37,27 +46,64 @@ Provide a comprehensive pharmacogenomic analysis of {drug_name} for THIS patient
 1. Identify which genes (from the patient's data) are relevant to {drug_name} metabolism
 2. Explain how the patient's specific variants affect {drug_name} efficacy and safety
 3. Provide personalized recommendations for dosing or alternatives
-4. Assess the risk level (Safe/Adjust Dosage/Toxic/Ineffective)
-5. Cite relevant clinical guidelines (CPIC, FDA, etc.)
+4. Assess the risk level: choose ONE from (Safe, Adjust Dosage, Toxic Risk, Ineffective, No Interaction)
+5. Assess severity: choose ONE from (Low, Medium, High, Critical)
+6. Provide confidence score (0.0 to 1.0)
+7. Cite relevant clinical guidelines (CPIC, FDA, etc.)
 
-Be specific to THIS patient's genetic variants. If {drug_name} doesn't interact with their available genes, explain that clearly.
+Be specific to THIS patient's genetic variants. If {drug_name} doesn't interact with their available genes, use "No Interaction" risk label.
 
-Provide a detailed, actionable clinical analysis."""
+**Output Format (JSON only):**
+{{
+  "risk_label": "Safe|Adjust Dosage|Toxic Risk|Ineffective|No Interaction",
+  "severity": "Low|Medium|High|Critical",
+  "confidence_score": 0.85,
+  "recommendation": {{
+    "action": "Brief action statement",
+    "details": "Detailed clinical recommendation with dosing guidance"
+  }},
+  "explanation": "Comprehensive explanation of how patient's genetic variants affect this drug"
+}}
+
+Return ONLY valid JSON, no markdown or additional text."""
 
     try:
         response = client.chat.send(
             model="qwen/qwen-2.5-72b-instruct",
             messages=[
-                {"role": "system", "content": "You are a pharmacogenomics expert providing personalized drug analysis."},
+                {"role": "system", "content": "You are a pharmacogenomics expert providing personalized drug analysis. Always return valid JSON."},
                 {"role": "user", "content": prompt}
             ],
             stream=False
         )
         
-        return response.choices[0].message.content.strip()
+        content = response.choices[0].message.content.strip()
         
+        # Remove markdown code blocks if present
+        if content.startswith("```"):
+            content = content.split("```")[1]
+            if content.startswith("json"):
+                content = content[4:]
+            content = content.strip()
+        
+        result = json.loads(content)
+        
+        # Validate required fields
+        required = ["risk_label", "severity", "confidence_score", "recommendation", "explanation"]
+        if not all(field in result for field in required):
+            print(f"LLM response missing required fields")
+            return fallback
+        
+        return result
+        
+    except json.JSONDecodeError as e:
+        print(f"LLM JSON parsing error: {e}")
+        print(f"Content received: {content if 'content' in locals() else 'No content'}")
+        return fallback
     except Exception as e:
         print(f"LLM generation error: {e}")
+        import traceback
+        traceback.print_exc()
         return fallback
 
 def _get_phenotype_description(phenotype: str) -> str:
@@ -80,28 +126,8 @@ def generate_explanation(
     guideline: str,
     risk_label: str
 ) -> Dict:
-    """
-    Generate LLM-powered clinical explanation for pharmacogenomic analysis.
+    """Generate LLM-powered clinical explanation for pharmacogenomic analysis"""
     
-    Uses RAG approach:
-    1. Retrieves patient genetic data (variants, diplotype, phenotype)
-    2. Augments with clinical guidelines and risk assessment
-    3. Generates contextualized explanation via LLM
-    
-    Args:
-        drug: Drug name being analyzed
-        gene: Primary metabolizing gene
-        diplotype: Patient's gene diplotype (e.g., *1/*2)
-        phenotype: Metabolizer phenotype (PM/IM/NM/RM/UM)
-        variants: List of detected variant rsIDs
-        guideline: CPIC guideline reference
-        risk_label: Computed risk level
-    
-    Returns:
-        Dict with summary, mechanism_of_action, variant_citations, confidence_statement
-    """
-    
-    # Fallback response if no API key
     fallback = {
         "summary": f"Patient has {phenotype} phenotype for {gene}, resulting in {risk_label} risk with {drug}.",
         "mechanism_of_action": f"{gene} metabolizes {drug}. {phenotype} phenotype affects drug metabolism.",
@@ -112,7 +138,6 @@ def generate_explanation(
     if not os.getenv("OPENROUTER_API_KEY"):
         return fallback
     
-    # RAG: Construct context-rich prompt with retrieved patient data + clinical knowledge
     prompt = f"""You are a clinical pharmacogenomics expert providing personalized drug analysis based on patient genetic data.
 
 **PATIENT'S GENETIC DATA (Retrieved from their VCF file):**
@@ -153,7 +178,6 @@ Provide a comprehensive, personalized analysis of how THIS SPECIFIC PATIENT'S ge
 Return ONLY valid JSON, no markdown or additional text."""
 
     try:
-        # Generate LLM response with optimized parameters
         response = client.chat.send(
             model="qwen/qwen-2.5-72b-instruct",
             messages=[
@@ -164,14 +188,132 @@ Return ONLY valid JSON, no markdown or additional text."""
         )
         
         content = response.choices[0].message.content.strip()
-        
-        # Parse and validate JSON response
         result = json.loads(content)
         
-        # Ensure all required fields are present
         required_fields = ["summary", "mechanism_of_action", "variant_citations", "confidence_statement"]
         if not all(field in result for field in required_fields):
             print(f"LLM response missing required fields, using fallback")
+            return fallback
+        
+        return result
+        
+    except json.JSONDecodeError as e:
+        print(f"LLM JSON parsing error: {e}")
+        return fallback
+    except Exception as e:
+        print(f"LLM generation error: {e}")
+        return fallback
+
+def generate_comprehensive_analysis(variants: List[Dict], pgx_profiles: List[Dict]) -> Dict:
+    """Generate comprehensive genetic analysis with harmful/safe drugs"""
+    
+    fallback = {
+        "harmful_drugs": [],
+        "safe_drugs": [],
+        "recommendations": {
+            "lifestyle": "Consult healthcare provider for personalized recommendations.",
+            "monitoring": "Regular health checkups recommended."
+        },
+        "full_report": "Unable to generate comprehensive analysis. Please check API configuration."
+    }
+    
+    if not os.getenv("OPENROUTER_API_KEY"):
+        return fallback
+    
+    variants_text = "\n".join([
+        f"- {v['rsid']} in {v['gene']}: {v['genotype']}" + 
+        (f" (allele: {v['star_allele']})" if v.get('star_allele') else "")
+        for v in variants[:20]
+    ])
+    
+    profiles_text = "\n".join([
+        f"- {p['gene']}: {p['diplotype']} ({p['phenotype']} metabolizer)"
+        for p in pgx_profiles
+    ])
+    
+    prompt = f"""You are a clinical pharmacogenomics expert. Analyze this patient's complete genetic profile to identify ALL medications they should avoid or use with caution.
+
+**PATIENT'S COMPLETE GENETIC PROFILE:**
+
+**Detected Variants:**
+{variants_text}
+
+**Pharmacogenomic Profiles:**
+{profiles_text}
+
+**YOUR TASK:**
+Provide a COMPREHENSIVE analysis covering:
+
+1. **Harmful/High-Risk Medications**: List ALL medications this patient should NEVER take or use with extreme caution based on their genetic profile. Include:
+   - Drug name
+   - Why it's dangerous for THIS patient
+   - Specific genetic reason (gene + phenotype)
+   - Severity level (Critical/High/Moderate)
+
+2. **Safe Medications**: List medications that are SAFE for this patient based on their genetic profile
+
+3. **Clinical Recommendations**:
+   - Lifestyle modifications
+   - Monitoring requirements
+   - Alternative medication classes to consider
+   - What to tell their doctor
+
+4. **Full Report**: Comprehensive summary explaining their overall pharmacogenomic risk profile
+
+**IMPORTANT**: Be thorough and specific. This is a one-time comprehensive analysis.
+
+**Output Format (JSON only):**
+{{
+  "harmful_drugs": [
+    {{
+      "drug": "Drug name",
+      "reason": "Why dangerous for this patient",
+      "gene": "Relevant gene",
+      "phenotype": "Patient's phenotype",
+      "severity": "Critical|High|Moderate",
+      "alternatives": "Suggested alternatives"
+    }}
+  ],
+  "safe_drugs": [
+    {{
+      "drug": "Drug name",
+      "reason": "Why safe for this patient",
+      "gene": "Relevant gene"
+    }}
+  ],
+  "recommendations": {{
+    "lifestyle": "Lifestyle recommendations",
+    "monitoring": "What to monitor",
+    "doctor_discussion": "Key points to discuss with doctor"
+  }},
+  "full_report": "Comprehensive 3-4 paragraph summary of patient's pharmacogenomic profile and overall risk assessment"
+}}
+
+Return ONLY valid JSON, no markdown."""
+
+    try:
+        response = client.chat.send(
+            model="qwen/qwen-2.5-72b-instruct",
+            messages=[
+                {"role": "system", "content": "You are a pharmacogenomics expert providing comprehensive genetic analysis. Always return valid JSON."},
+                {"role": "user", "content": prompt}
+            ],
+            stream=False
+        )
+        
+        content = response.choices[0].message.content.strip()
+        
+        if content.startswith("```"):
+            content = content.split("```")[1]
+            if content.startswith("json"):
+                content = content[4:]
+            content = content.strip()
+        
+        result = json.loads(content)
+        
+        required = ["harmful_drugs", "safe_drugs", "recommendations", "full_report"]
+        if not all(field in result for field in required):
+            print(f"LLM response missing required fields")
             return fallback
         
         return result

@@ -1,13 +1,17 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { UploadCloud, File, X, CheckCircle } from "lucide-react";
+import { UploadCloud, File, X, CheckCircle, Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { authFetch } from "@/lib/auth";
+import { Button } from "@/components/ui/button";
 
 export default function FileUpload() {
     const router = useRouter();
     const [isDragging, setIsDragging] = useState(false);
     const [file, setFile] = useState<File | null>(null);
+    const [uploading, setUploading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
 
     const handleDrag = useCallback((e: React.DragEvent) => {
         e.preventDefault();
@@ -28,8 +32,9 @@ export default function FileUpload() {
             const droppedFile = e.dataTransfer.files[0];
             if (droppedFile.name.endsWith(".vcf") || droppedFile.name.endsWith(".vcf.gz")) {
                 setFile(droppedFile);
+                setError(null);
             } else {
-                alert("Please upload a valid .vcf file");
+                setError("Please upload a valid .vcf file");
             }
         }
     }, []);
@@ -37,18 +42,40 @@ export default function FileUpload() {
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
             setFile(e.target.files[0]);
+            setError(null);
         }
     };
 
     const removeFile = () => {
         setFile(null);
+        setError(null);
     };
 
-    const handleUpload = () => {
+    const handleUpload = async () => {
         if (!file) return;
-        // In a real app, we would upload to server here.
-        // For now, prompt the user or just redirect to processing.
-        router.push("/processing");
+        setUploading(true);
+        setError(null);
+
+        try {
+            const formData = new FormData();
+            formData.append("file", file);
+
+            const res = await authFetch("/upload-vcf", {
+                method: "POST",
+                body: formData,
+            });
+
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ detail: "Upload failed" }));
+                throw new Error(err.detail || "Upload failed");
+            }
+
+            router.push("/analyze");
+        } catch (err: any) {
+            setError(err.message || "Failed to upload file");
+        } finally {
+            setUploading(false);
+        }
     };
 
     return (
@@ -104,12 +131,27 @@ export default function FileUpload() {
                             <CheckCircle className="w-4 h-4" />
                             <span>File validated successfully</span>
                         </div>
-                        <button
+                        {error && (
+                            <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+                                {error}
+                            </div>
+                        )}
+                        <Button
                             onClick={handleUpload}
-                            className="w-full btn-glow py-3 rounded-xl font-bold text-white flex items-center justify-center gap-2"
+                            disabled={uploading}
+                            variant="glow"
+                            size="lg"
+                            className="w-full"
                         >
-                            Process Genome
-                        </button>
+                            {uploading ? (
+                                <>
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                    Uploading...
+                                </>
+                            ) : (
+                                "Process Genome"
+                            )}
+                        </Button>
                     </div>
                 </div>
             )}

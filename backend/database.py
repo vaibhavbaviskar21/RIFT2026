@@ -222,5 +222,90 @@ class DatabaseService:
             return analyses
         except Exception as e:
             raise Exception(f"Failed to get drug analyses: {str(e)}")
-
+    
+    async def get_user_pgx_profiles(self, user_id: str):
+        """Fetch all pharmacogenomic profiles for a user"""
+        try:
+            query = """
+                SELECT id, user_id, gene, diplotype, phenotype, activity_score, created_at, updated_at
+                FROM user_pgx_profiles
+                WHERE user_id = :user_id
+            """
+            rows = await self.database.fetch_all(query=query, values={"user_id": user_id})
+            return [dict(row) for row in rows]
+        except Exception as e:
+            raise Exception(f"Failed to get PGx profiles: {str(e)}")
+    
+    async def save_search_history(self, user_id: str, drug_name: str, risk_label: str):
+        """Save drug search to history"""
+        try:
+            query = """
+                INSERT INTO search_history (user_id, drug_name, risk_label, searched_at)
+                VALUES (:user_id, :drug_name, :risk_label, NOW())
+                RETURNING id
+            """
+            result = await self.database.fetch_one(
+                query=query,
+                values={"user_id": user_id, "drug_name": drug_name, "risk_label": risk_label}
+            )
+            return result
+        except Exception as e:
+            raise Exception(f"Failed to save search history: {str(e)}")
+    
+    async def get_search_history(self, user_id: str, limit: int = 50):
+        """Get user's search history"""
+        try:
+            query = """
+                SELECT id, drug_name, risk_label, searched_at
+                FROM search_history
+                WHERE user_id = :user_id
+                ORDER BY searched_at DESC
+                LIMIT :limit
+            """
+            rows = await self.database.fetch_all(query=query, values={"user_id": user_id, "limit": limit})
+            return [dict(row) for row in rows]
+        except Exception as e:
+            raise Exception(f"Failed to get search history: {str(e)}")
+    
+    async def save_advanced_analysis(self, user_id: str, analysis_data: Dict):
+        """Save comprehensive genetic analysis"""
+        try:
+            import json
+            query = """
+                INSERT INTO advanced_analyses 
+                (user_id, harmful_drugs, safe_drugs, recommendations, full_report, created_at)
+                VALUES (:user_id, :harmful_drugs, :safe_drugs, :recommendations, :full_report, NOW())
+                ON CONFLICT (user_id)
+                DO UPDATE SET harmful_drugs = :harmful_drugs, safe_drugs = :safe_drugs,
+                              recommendations = :recommendations, full_report = :full_report,
+                              created_at = NOW()
+                RETURNING id
+            """
+            result = await self.database.fetch_one(
+                query=query,
+                values={
+                    "user_id": user_id,
+                    "harmful_drugs": json.dumps(analysis_data.get("harmful_drugs", [])),
+                    "safe_drugs": json.dumps(analysis_data.get("safe_drugs", [])),
+                    "recommendations": json.dumps(analysis_data.get("recommendations", {})),
+                    "full_report": json.dumps(analysis_data.get("full_report", ""))
+                }
+            )
+            return result
+        except Exception as e:
+            raise Exception(f"Failed to save advanced analysis: {str(e)}")
+    
+    async def get_advanced_analysis(self, user_id: str):
+        """Get user's advanced analysis"""
+        try:
+            query = """
+                SELECT id, harmful_drugs, safe_drugs, recommendations, full_report, created_at
+                FROM advanced_analyses
+                WHERE user_id = :user_id
+            """
+            result = await self.database.fetch_one(query=query, values={"user_id": user_id})
+            return result
+        except Exception as e:
+            raise Exception(f"Failed to get advanced analysis: {str(e)}")
+      
 db = DatabaseService()
