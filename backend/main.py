@@ -243,7 +243,7 @@ async def upload_vcf(file: UploadFile = File(...), current_user = Depends(get_cu
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"VCF upload failed: {str(e)}")
 
-@app.post("/query-drug", response_model=DrugQueryResponse)
+@app.post("/query-drug", response_model=DrugAnalysisResponse)
 async def query_drug(request: DrugQueryRequest, current_user = Depends(get_current_user)):
     """Query specific drug analysis for user"""
     try:
@@ -251,25 +251,6 @@ async def query_drug(request: DrugQueryRequest, current_user = Depends(get_curre
         
         if drug_name not in DRUG_GENE_RISK:
             raise HTTPException(status_code=404, detail=f"Drug '{drug_name}' not found in database")
-        
-        analysis = await db.get_drug_analysis(str(current_user["id"]), drug_name)
-        
-        if analysis:
-            recommendation = json.loads(analysis["recommendation"]) if isinstance(analysis["recommendation"], str) else analysis["recommendation"]
-            llm_explanation = json.loads(analysis["llm_explanation"]) if isinstance(analysis["llm_explanation"], str) else analysis["llm_explanation"]
-            
-            return DrugQueryResponse(
-                drug=analysis["drug"],
-                risk_assessment=RiskAssessment(
-                    risk_label=analysis["risk_label"],
-                    confidence_score=analysis["confidence_score"],
-                    severity=analysis["severity"]
-                ),
-                recommendation=ClinicalRecommendation(**recommendation),
-                llm_explanation=LLMExplanation(**llm_explanation),
-                phenotype=analysis["phenotype"],
-                diplotype=analysis["diplotype"]
-            )
         
         gene = DRUG_GENE_RISK[drug_name]["gene"]
         variants_db = await db.get_user_variants(str(current_user["id"]), gene)
@@ -320,17 +301,28 @@ async def query_drug(request: DrugQueryRequest, current_user = Depends(get_curre
             llm_explanation=llm_explanation
         )
         
-        return DrugQueryResponse(
+        return DrugAnalysisResponse(
+            patient_id=str(current_user["id"]),
             drug=drug_name,
+            timestamp=datetime.utcnow().isoformat() + "Z",
             risk_assessment=RiskAssessment(
                 risk_label=risk_data["risk_label"],
                 confidence_score=risk_data["confidence"],
                 severity=risk_data["severity"]
             ),
-            recommendation=ClinicalRecommendation(**recommendation),
-            llm_explanation=LLMExplanation(**llm_explanation),
-            phenotype=phenotype,
-            diplotype=diplotype
+            pharmacogenomic_profile=PharmacogenomicProfile(
+                primary_gene=gene,
+                diplotype=diplotype,
+                phenotype=phenotype,
+                detected_variants=variants
+            ),
+            clinical_recommendation=ClinicalRecommendation(**recommendation),
+            llm_generated_explanation=LLMExplanation(**llm_explanation),
+            quality_metrics=QualityMetrics(
+                vcf_parsing_success=True,
+                variants_analyzed=len(variants),
+                llm_response_generated=True
+            )
         )
         
     except HTTPException:
@@ -362,6 +354,11 @@ async def get_my_analyses(current_user = Depends(get_current_user)):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get analyses: {str(e)}")
+
+@app.get("/")
+async def root():
+    """Root endpoint"""
+    return {"message": "Pharmacogenomics API", "docs": "/docs"}
 
 @app.get("/health")
 async def health_check():

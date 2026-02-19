@@ -4,11 +4,16 @@ import os
 from datetime import datetime
 
 class DatabaseService:
+    """
+    Database service for managing pharmacogenomic data in PostgreSQL via Supabase.
+    Handles user authentication, VCF uploads, genetic variants, and drug analyses.
+    """
+    
     def __init__(self):
         self.database: Optional[Database] = None
         
     async def connect(self):
-        """Initialize database connection"""
+        """Initialize async database connection pool"""
         try:
             database_url = os.getenv("DATABASE_URL")
             if not database_url:
@@ -22,7 +27,7 @@ class DatabaseService:
             raise Exception(f"Failed to connect to database: {str(e)}")
     
     async def disconnect(self):
-        """Close database connection"""
+        """Close database connection pool"""
         try:
             if self.database:
                 await self.database.disconnect()

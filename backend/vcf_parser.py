@@ -4,13 +4,27 @@ from models import Variant
 TARGET_GENES = ["CYP2D6", "CYP2C19", "CYP2C9", "SLCO1B1", "TPMT", "DPYD"]
 
 def parse_vcf(file_content: bytes) -> tuple[List[Variant], bool, str]:
-    """Parse VCF file and extract pharmacogenomic variants"""
+    """
+    Parse VCF file and extract pharmacogenomic variants for target genes.
+    
+    Implements robust error handling for production:
+    - Validates file encoding and format
+    - Filters for clinically relevant genes
+    - Handles malformed lines gracefully
+    - Returns detailed error messages
+    
+    Args:
+        file_content: Raw VCF file bytes
+    
+    Returns:
+        Tuple of (variants_list, success_bool, error_message_str)
+    """
     variants = []
     success = True
     error_message = ""
     
     try:
-        # Decode file content
+        # Validate UTF-8 encoding
         try:
             lines = file_content.decode('utf-8').split('\n')
         except UnicodeDecodeError:
@@ -21,7 +35,7 @@ def parse_vcf(file_content: bytes) -> tuple[List[Variant], bool, str]:
         
         variant_count = 0
         for line_num, line in enumerate(lines, 1):
-            # Skip headers and empty lines
+            # Skip VCF headers and empty lines
             if line.startswith('#') or not line.strip():
                 continue
             
@@ -32,13 +46,13 @@ def parse_vcf(file_content: bytes) -> tuple[List[Variant], bool, str]:
                 
                 chrom, pos, id_field, ref, alt, qual, filter_field, info_field, format_field = fields[:9]
                 
-                # Validate position
+                # Validate position is numeric
                 try:
                     position = int(pos)
                 except ValueError:
                     continue
                 
-                # Parse INFO field
+                # Parse INFO field for gene and variant metadata
                 info = {}
                 for item in info_field.split(';'):
                     if '=' in item:
@@ -47,14 +61,14 @@ def parse_vcf(file_content: bytes) -> tuple[List[Variant], bool, str]:
                 
                 gene = info.get('GENE', '')
                 
-                # Filter for target genes only
+                # Filter for pharmacogenomic target genes only
                 if gene not in TARGET_GENES:
                     continue
                 
                 rsid = info.get('RS', id_field if id_field != '.' else '')
                 star_allele = info.get('STAR', None)
                 
-                # Extract genotype from sample
+                # Extract genotype from sample column
                 genotype = '0/0'
                 if len(fields) > 9:
                     sample_data = fields[9]
