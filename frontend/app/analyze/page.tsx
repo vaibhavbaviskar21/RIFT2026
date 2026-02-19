@@ -1,31 +1,82 @@
 "use client";
 
 import Navbar from "@/components/Navbar";
-import { useState } from "react";
-import { Search, AlertTriangle, CheckCircle, HelpCircle, Pill, FileText, Activity } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Search, AlertTriangle, CheckCircle, Pill, FileText, Activity, Download } from "lucide-react";
+import { getToken, isLoggedIn, authFetch } from "@/lib/auth";
+import { useRouter } from "next/navigation";
 
 export default function AnalyzePage() {
+    const router = useRouter();
     const [drug, setDrug] = useState("");
     const [result, setResult] = useState<any>(null);
+    const [rawResult, setRawResult] = useState<any>(null);
     const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
 
-    const handleAnalyze = (e: React.FormEvent) => {
+    useEffect(() => {
+        if (!isLoggedIn()) {
+            router.push("/login");
+        }
+    }, [router]);
+
+    const handleAnalyze = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!drug) return;
-
+        setError(null);
+        setResult(null);
         setLoading(true);
-        // Simulate API call
-        setTimeout(() => {
-            setResult({
-                risk: "High Risk",
-                severity: "high",
-                gene: "CYP2D6",
-                phenotype: "Poor Metabolizer",
-                recommendation: "Consider alternative to Codeine due to lack of efficacy. Monitor for adverse effects if prescribed.",
-                explanation: "The patient currently carries two non-functional alleles for CYP2D6 (*4/*4). This results in a 'Poor Metabolizer' phenotype. Codeine requires CYP2D6 for conversion to its active metabolite, morphine. Therefore, the patient will experience reduced analgesic efficacy."
+
+        try {
+            const res = await authFetch("/query-drug", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ drug_name: drug.trim() }),
             });
+
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ detail: `Server error (${res.status})` }));
+                throw new Error(err.detail || `Request failed (${res.status})`);
+            }
+
+            const data = await res.json();
+            setRawResult(data);
+
+            const riskLabel = data.risk_assessment.risk_label;
+            setResult({
+                risk: riskLabel,
+                severity: ["toxic", "ineffective"].some((k) =>
+                    riskLabel.toLowerCase().includes(k)
+                ) ? "high" : "low",
+                gene: data.pharmacogenomic_profile.primary_gene,
+                phenotype: data.pharmacogenomic_profile.phenotype,
+                diplotype: data.pharmacogenomic_profile.diplotype,
+                recommendation: data.clinical_recommendation.recommended_action,
+                explanation: data.llm_generated_explanation.summary,
+                confidence: data.risk_assessment.confidence_score,
+            });
+        } catch (err: any) {
+            if (err.message?.includes("fetch") || err.message?.includes("Failed")) {
+                setError("Cannot reach the backend. Is it running on port 8000?");
+            } else {
+                setError(err.message || "An error occurred.");
+            }
+        } finally {
             setLoading(false);
-        }, 1500);
+        }
+    };
+
+    const downloadReport = () => {
+        if (!rawResult) return;
+        const blob = new Blob([JSON.stringify(rawResult, null, 2)], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `PharmaGuard_${drug}_Report.json`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
     };
 
     return (
@@ -50,7 +101,7 @@ export default function AnalyzePage() {
                                     type="text"
                                     value={drug}
                                     onChange={(e) => setDrug(e.target.value)}
-                                    placeholder="e.g. Codeine, Warfarin, Simvastatin"
+                                    placeholder="e.g. Codeine, Warfarin, Clopidogrel"
                                     className="w-full h-14 pl-12 pr-4 rounded-2xl glass-input border border-white/10 focus:border-primary/50 text-lg shadow-[0_0_20px_-5px_rgba(0,0,0,0.3)] focus:shadow-[0_0_30px_-5px_rgba(168,85,247,0.3)] transition-all"
                                 />
                                 <button
@@ -62,6 +113,12 @@ export default function AnalyzePage() {
                                 </button>
                             </div>
                         </form>
+
+                        {error && (
+                            <div className="mt-4 p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm max-w-xl mx-auto animate-[fadeIn_0.3s_ease-out]">
+                                {error}
+                            </div>
+                        )}
                     </div>
 
                     {/* Result Section */}
@@ -80,11 +137,11 @@ export default function AnalyzePage() {
                                             </div>
                                             <div>
                                                 <h2 className={`text-3xl font-bold ${result.severity === 'high' ? 'text-red-400' : 'text-green-400'}`}>{result.risk}</h2>
-                                                <p className="text-gray-400 text-sm">Based on patient's genomic profile</p>
+                                                <p className="text-gray-400 text-sm">Confidence: {(result.confidence * 100).toFixed(0)}%</p>
                                             </div>
                                         </div>
 
-                                        <div className="flex gap-4">
+                                        <div className="flex gap-4 flex-wrap">
                                             <div className="px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-center">
                                                 <div className="text-xs text-gray-500 font-bold uppercase tracking-wider">Gene</div>
                                                 <div className="text-lg font-mono font-bold text-white">{result.gene}</div>
@@ -93,6 +150,10 @@ export default function AnalyzePage() {
                                                 <div className="text-xs text-gray-500 font-bold uppercase tracking-wider">Phenotype</div>
                                                 <div className="text-lg font-mono font-bold text-white">{result.phenotype}</div>
                                             </div>
+                                            <div className="px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-center">
+                                                <div className="text-xs text-gray-500 font-bold uppercase tracking-wider">Diplotype</div>
+                                                <div className="text-lg font-mono font-bold text-white">{result.diplotype}</div>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -100,33 +161,38 @@ export default function AnalyzePage() {
 
                             {/* Details Grid */}
                             <div className="grid md:grid-cols-2 gap-6">
-
-                                {/* Recommendation */}
                                 <div className="glass-card p-6 rounded-2xl">
                                     <div className="flex items-center gap-3 mb-4">
                                         <Pill className="w-5 h-5 text-tertiary" />
                                         <h3 className="text-lg font-bold">Recommendation</h3>
                                     </div>
-                                    <p className="text-gray-300 leading-relaxed font-medium">
-                                        {result.recommendation}
-                                    </p>
+                                    <p className="text-gray-300 leading-relaxed font-medium">{result.recommendation}</p>
                                 </div>
 
-                                {/* Explanation */}
                                 <div className="glass-card p-6 rounded-2xl">
                                     <div className="flex items-center gap-3 mb-4">
                                         <Activity className="w-5 h-5 text-secondary" />
                                         <h3 className="text-lg font-bold">Clinical Evidence</h3>
                                     </div>
-                                    <p className="text-sm text-gray-400 leading-relaxed">
-                                        {result.explanation}
-                                    </p>
+                                    <p className="text-sm text-gray-400 leading-relaxed">{result.explanation}</p>
                                 </div>
+                            </div>
+
+                            {/* Download */}
+                            <div className="flex justify-center">
+                                <button
+                                    onClick={downloadReport}
+                                    className="flex items-center gap-2 px-6 py-3 rounded-xl bg-white/5 border border-white/10 text-sm font-semibold text-gray-300 hover:bg-white/10 hover:text-white transition-all"
+                                >
+                                    <Download className="w-5 h-5" />
+                                    Download Official Report (JSON)
+                                </button>
                             </div>
                         </div>
                     )}
 
-                    {!result && !loading && (
+                    {/* Empty State */}
+                    {!result && !loading && !error && (
                         <div className="grid md:grid-cols-3 gap-6 mt-16 opacity-50">
                             <div className="glass-card p-6 rounded-2xl text-center border-dashed border-white/10">
                                 <div className="w-12 h-12 rounded-full bg-white/5 mx-auto mb-4 flex items-center justify-center">

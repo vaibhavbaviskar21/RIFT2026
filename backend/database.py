@@ -19,7 +19,8 @@ class DatabaseService:
             if not database_url:
                 raise Exception("DATABASE_URL not found in environment variables")
             
-            self.database = Database(database_url)
+            # Disable prepared statement cache — required for Supabase (PgBouncer)
+            self.database = Database(database_url, statement_cache_size=0)
             await self.database.connect()
             return True
         except Exception as e:
