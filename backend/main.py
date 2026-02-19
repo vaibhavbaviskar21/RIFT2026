@@ -1,17 +1,30 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException, Form
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from typing import List
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from typing import List, Optional
 from datetime import datetime
 import os
+import json
+from dotenv import load_dotenv
 
-from models import DrugAnalysisResponse, RiskAssessment, PharmacogenomicProfile, ClinicalRecommendation, LLMExplanation, QualityMetrics
-from vcf_parser import parse_vcf
+load_dotenv()
+
+from models import (
+    DrugAnalysisResponse, RiskAssessment, PharmacogenomicProfile, 
+    ClinicalRecommendation, LLMExplanation, QualityMetrics,
+    SignupRequest, LoginRequest, AuthResponse, UserResponse,
+    DrugQueryRequest, DrugQueryResponse, Variant
+)
+from vcf_parser import parse_vcf, variants_to_dict
 from diplotype_analyzer import determine_diplotype
 from risk_engine import assess_risk, get_recommendation
-# from llm_service import generate_explanation
+from llm_service import generate_explanation
 from lookup_tables import DRUG_GENE_RISK
+from database import db
+from auth import hash_password, verify_password, create_access_token, decode_access_token
 
 app = FastAPI(title="Pharmacogenomics Analysis API")
+security = HTTPBearer()
 
 app.add_middleware(
     CORSMiddleware,
@@ -21,90 +34,354 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.post("/analyze", response_model=List[DrugAnalysisResponse])
-async def analyze_pharmacogenomics(
-    file: UploadFile = File(...),
-    drugs: str = Form(...),
-    patient_id: str = Form("PATIENT_001")
-):
-    """Analyze VCF file for pharmacogenomic risks"""
-    
-    # Validate file
-    if not file.filename.endswith('.vcf'):
-        raise HTTPException(status_code=400, detail="Only .vcf files allowed")
-    
-    if file.size and file.size > 5 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="File size exceeds 5MB")
-    
-    # Parse VCF
-    content = await file.read()
-    variants, parsing_success = parse_vcf(content)
-    
-    if not parsing_success:
-        raise HTTPException(status_code=400, detail="Failed to parse VCF file")
-    
-    # Parse drug list
-    drug_list = [d.strip().upper() for d in drugs.split(',')]
-    
-    results = []
-    
-    for drug in drug_list:
-        if drug not in DRUG_GENE_RISK:
-            continue
+@app.on_event("startup")
+async def startup():
+    """Initialize database connection on startup"""
+    try:
+        await db.connect()
+        print("Database connected successfully")
+    except Exception as e:
+        print(f"WARNING: Failed to connect to database: {e}")
+        print("Server will start but database operations will fail")
+        print("Please check your DATABASE_URL in .env file")
+
+@app.on_event("shutdown")
+async def shutdown():
+    """Close database connection on shutdown"""
+    await db.disconnect()
+    print("Database disconnected")
+
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """Verify JWT token and return current user"""
+    try:
+        token = credentials.credentials
+        payload = decode_access_token(token)
+        user_id = payload.get("sub")
         
-        # Get target gene for drug
-        gene = DRUG_GENE_RISK[drug]["gene"]
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Invalid authentication token")
         
-        # Determine diplotype and phenotype
-        diplotype, phenotype = determine_diplotype(variants, gene)
+        user = await db.get_user_by_id(user_id)
+        if not user:
+            raise HTTPException(status_code=401, detail="User not found")
         
-        # Get gene-specific variants
-        gene_variants = [v for v in variants if v.gene == gene]
+        return user
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=f"Authentication failed: {str(e)}")
+
+@app.post("/auth/signup", response_model=AuthResponse)
+async def signup(request: SignupRequest):
+    """User signup endpoint"""
+    try:
+        existing_user = await db.get_user_by_email(request.email)
+        if existing_user:
+            raise HTTPException(status_code=400, detail="Email already registered")
         
-        # Assess risk
-        risk_data = assess_risk(drug, phenotype)
+        password_hash = hash_password(request.password)
+        user = await db.create_user(
+            email=request.email,
+            password_hash=password_hash,
+            full_name=request.full_name
+        )
         
-        # Get recommendation
-        recommendation = get_recommendation(drug, phenotype)
+        access_token = create_access_token(data={"sub": str(user["id"]), "email": user["email"]})
         
-        # Generate LLM explanation (fallback without OpenAI)
-        variant_rsids = [v.rsid for v in gene_variants]
-        llm_explanation = {
-            "summary": f"Patient has {phenotype} phenotype for {gene}, resulting in {risk_data['risk_label']} risk with {drug}.",
-            "mechanism_of_action": f"{gene} is responsible for metabolizing {drug}. The {phenotype} phenotype affects the rate of drug metabolism.",
-            "variant_citations": variant_rsids,
-            "confidence_statement": "Based on CPIC guidelines and detected genetic variants."
+        return AuthResponse(
+            access_token=access_token,
+            user_id=str(user["id"]),
+            email=user["email"],
+            full_name=user["full_name"]
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Signup failed: {str(e)}")
+
+@app.post("/auth/login", response_model=AuthResponse)
+async def login(request: LoginRequest):
+    """User login endpoint"""
+    try:
+        user = await db.get_user_by_email(request.email)
+        if not user:
+            raise HTTPException(status_code=401, detail="Invalid email or password")
+        
+        if not verify_password(request.password, user["password"]):
+            raise HTTPException(status_code=401, detail="Invalid email or password")
+        
+        access_token = create_access_token(data={"sub": str(user["id"]), "email": user["email"]})
+        
+        return AuthResponse(
+            access_token=access_token,
+            user_id=str(user["id"]),
+            email=user["email"],
+            full_name=user["full_name"]
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Login failed: {str(e)}")
+
+@app.get("/auth/me", response_model=UserResponse)
+async def get_me(current_user = Depends(get_current_user)):
+    """Get current user info"""
+    return UserResponse(
+        id=str(current_user["id"]),
+        email=current_user["email"],
+        full_name=current_user["full_name"],
+        created_at=current_user["created_at"].isoformat()
+    )
+
+@app.post("/upload-vcf")
+async def upload_vcf(file: UploadFile = File(...), current_user = Depends(get_current_user)):
+    """Upload and parse VCF file, save to database"""
+    try:
+        if not file.filename.endswith('.vcf'):
+            raise HTTPException(status_code=400, detail="Only .vcf files allowed")
+        
+        content = await file.read()
+        file_size = len(content)
+        
+        if file_size > 10 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="File size exceeds 10MB")
+        
+        vcf_upload = await db.create_vcf_upload(
+            user_id=str(current_user["id"]),
+            filename=file.filename,
+            file_size=file_size
+        )
+        
+        variants, parsing_success, error_message = parse_vcf(content)
+        
+        if not parsing_success:
+            await db.update_vcf_upload(str(vcf_upload["id"]), False, 0)
+            raise HTTPException(status_code=400, detail=error_message or "Failed to parse VCF file")
+        
+        if not variants:
+            await db.update_vcf_upload(str(vcf_upload["id"]), False, 0)
+            raise HTTPException(status_code=400, detail="No pharmacogenomic variants found in VCF file")
+        
+        variant_dicts = variants_to_dict(variants)
+        saved_count = await db.save_genetic_variants(
+            user_id=str(current_user["id"]),
+            vcf_upload_id=str(vcf_upload["id"]),
+            variants=variant_dicts
+        )
+        
+        await db.update_vcf_upload(str(vcf_upload["id"]), True, saved_count)
+        
+        genes_analyzed = set(v.gene for v in variants)
+        pgx_profiles = []
+        
+        for gene in genes_analyzed:
+            diplotype, phenotype = determine_diplotype(variants, gene)
+            
+            profile = await db.save_pgx_profile(
+                user_id=str(current_user["id"]),
+                gene=gene,
+                diplotype=diplotype,
+                phenotype=phenotype
+            )
+            pgx_profiles.append({
+                "gene": gene,
+                "diplotype": diplotype,
+                "phenotype": phenotype
+            })
+        
+        drug_analyses = []
+        for drug, drug_data in DRUG_GENE_RISK.items():
+            gene = drug_data["gene"]
+            
+            if gene not in genes_analyzed:
+                continue
+            
+            gene_variants = [v for v in variants if v.gene == gene]
+            diplotype, phenotype = determine_diplotype(gene_variants, gene)
+            
+            risk_data = assess_risk(drug, phenotype)
+            recommendation = get_recommendation(drug, phenotype)
+            
+            variant_rsids = [v.rsid for v in gene_variants]
+            llm_explanation = generate_explanation(
+                drug=drug,
+                gene=gene,
+                diplotype=diplotype,
+                phenotype=phenotype,
+                variants=variant_rsids,
+                guideline=recommendation["guideline_reference"],
+                risk_label=risk_data["risk_label"]
+            )
+            
+            await db.save_drug_analysis(
+                user_id=str(current_user["id"]),
+                drug=drug,
+                gene=gene,
+                risk_label=risk_data["risk_label"],
+                severity=risk_data["severity"],
+                confidence_score=risk_data["confidence"],
+                phenotype=phenotype,
+                diplotype=diplotype,
+                recommendation=recommendation,
+                llm_explanation=llm_explanation
+            )
+            
+            drug_analyses.append({
+                "drug": drug,
+                "risk_label": risk_data["risk_label"],
+                "severity": risk_data["severity"]
+            })
+        
+        return {
+            "message": "VCF file processed successfully",
+            "upload_id": str(vcf_upload["id"]),
+            "variants_saved": saved_count,
+            "genes_analyzed": pgx_profiles,
+            "drug_analyses": drug_analyses
         }
         
-        # Build response
-        response = DrugAnalysisResponse(
-            patient_id=patient_id,
-            drug=drug,
-            timestamp=datetime.utcnow().isoformat() + "Z",
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"VCF upload failed: {str(e)}")
+
+@app.post("/query-drug", response_model=DrugQueryResponse)
+async def query_drug(request: DrugQueryRequest, current_user = Depends(get_current_user)):
+    """Query specific drug analysis for user"""
+    try:
+        drug_name = request.drug_name.upper().strip()
+        
+        if drug_name not in DRUG_GENE_RISK:
+            raise HTTPException(status_code=404, detail=f"Drug '{drug_name}' not found in database")
+        
+        analysis = await db.get_drug_analysis(str(current_user["id"]), drug_name)
+        
+        if analysis:
+            recommendation = json.loads(analysis["recommendation"]) if isinstance(analysis["recommendation"], str) else analysis["recommendation"]
+            llm_explanation = json.loads(analysis["llm_explanation"]) if isinstance(analysis["llm_explanation"], str) else analysis["llm_explanation"]
+            
+            return DrugQueryResponse(
+                drug=analysis["drug"],
+                risk_assessment=RiskAssessment(
+                    risk_label=analysis["risk_label"],
+                    confidence_score=analysis["confidence_score"],
+                    severity=analysis["severity"]
+                ),
+                recommendation=ClinicalRecommendation(**recommendation),
+                llm_explanation=LLMExplanation(**llm_explanation),
+                phenotype=analysis["phenotype"],
+                diplotype=analysis["diplotype"]
+            )
+        
+        gene = DRUG_GENE_RISK[drug_name]["gene"]
+        variants_db = await db.get_user_variants(str(current_user["id"]), gene)
+        
+        if not variants_db:
+            raise HTTPException(
+                status_code=404, 
+                detail=f"No genetic data found for {gene}. Please upload your VCF file first."
+            )
+        
+        variants = [
+            Variant(
+                rsid=v["rsid"],
+                gene=v["gene"],
+                star_allele=v["star_allele"],
+                genotype=v["genotype"],
+                chromosome=v["chromosome"],
+                position=v["position"]
+            )
+            for v in variants_db
+        ]
+        
+        diplotype, phenotype = determine_diplotype(variants, gene)
+        risk_data = assess_risk(drug_name, phenotype)
+        recommendation = get_recommendation(drug_name, phenotype)
+        
+        variant_rsids = [v.rsid for v in variants]
+        llm_explanation = generate_explanation(
+            drug=drug_name,
+            gene=gene,
+            diplotype=diplotype,
+            phenotype=phenotype,
+            variants=variant_rsids,
+            guideline=recommendation["guideline_reference"],
+            risk_label=risk_data["risk_label"]
+        )
+        
+        await db.save_drug_analysis(
+            user_id=str(current_user["id"]),
+            drug=drug_name,
+            gene=gene,
+            risk_label=risk_data["risk_label"],
+            severity=risk_data["severity"],
+            confidence_score=risk_data["confidence"],
+            phenotype=phenotype,
+            diplotype=diplotype,
+            recommendation=recommendation,
+            llm_explanation=llm_explanation
+        )
+        
+        return DrugQueryResponse(
+            drug=drug_name,
             risk_assessment=RiskAssessment(
                 risk_label=risk_data["risk_label"],
                 confidence_score=risk_data["confidence"],
                 severity=risk_data["severity"]
             ),
-            pharmacogenomic_profile=PharmacogenomicProfile(
-                primary_gene=gene,
-                diplotype=diplotype,
-                phenotype=phenotype,
-                detected_variants=gene_variants
-            ),
-            clinical_recommendation=ClinicalRecommendation(**recommendation),
-            llm_generated_explanation=LLMExplanation(**llm_explanation),
-            quality_metrics=QualityMetrics(
-                vcf_parsing_success=parsing_success,
-                variants_analyzed=len(gene_variants),
-                llm_response_generated=False
-            )
+            recommendation=ClinicalRecommendation(**recommendation),
+            llm_explanation=LLMExplanation(**llm_explanation),
+            phenotype=phenotype,
+            diplotype=diplotype
         )
         
-        results.append(response)
-    
-    return results
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Drug query failed: {str(e)}")
+
+@app.get("/my-analyses")
+async def get_my_analyses(current_user = Depends(get_current_user)):
+    """Get all drug analyses for current user"""
+    try:
+        analyses = await db.get_all_drug_analyses(str(current_user["id"]))
+        
+        return {
+            "user_id": str(current_user["id"]),
+            "total_analyses": len(analyses),
+            "analyses": [
+                {
+                    "drug": a["drug"],
+                    "gene": a["gene"],
+                    "risk_label": a["risk_label"],
+                    "severity": a["severity"],
+                    "phenotype": a["phenotype"],
+                    "diplotype": a["diplotype"],
+                    "created_at": a["created_at"].isoformat()
+                }
+                for a in analyses
+            ]
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get analyses: {str(e)}")
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "service": "pharmacogenomics-api"}
+    """Health check endpoint"""
+    try:
+        if db.database:
+            return {
+                "status": "healthy", 
+                "service": "pharmacogenomics-api",
+                "database": "connected"
+            }
+        else:
+            return {
+                "status": "degraded",
+                "service": "pharmacogenomics-api",
+                "database": "disconnected"
+            }
+    except Exception as e:
+        return {
+            "status": "unhealthy",
+            "service": "pharmacogenomics-api",
+            "error": str(e)
+        }

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, EmailStr
 from typing import List, Optional
 from datetime import datetime
 
@@ -46,3 +46,38 @@ class DrugAnalysisResponse(BaseModel):
     clinical_recommendation: ClinicalRecommendation
     llm_generated_explanation: LLMExplanation
     quality_metrics: QualityMetrics
+
+# Auth Models
+class SignupRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=8)
+    full_name: Optional[str] = None
+
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str
+
+class AuthResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user_id: str
+    email: str
+    full_name: Optional[str] = None
+
+class UserResponse(BaseModel):
+    id: str
+    email: str
+    full_name: Optional[str] = None
+    created_at: str
+
+# Drug Query Models
+class DrugQueryRequest(BaseModel):
+    drug_name: str
+
+class DrugQueryResponse(BaseModel):
+    drug: str
+    risk_assessment: RiskAssessment
+    recommendation: ClinicalRecommendation
+    llm_explanation: LLMExplanation
+    phenotype: str
+    diplotype: str
