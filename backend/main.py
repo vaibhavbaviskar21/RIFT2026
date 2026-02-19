@@ -67,17 +67,14 @@ async def analyze_pharmacogenomics(
         # Get recommendation
         recommendation = get_recommendation(drug, phenotype)
         
-        # Generate LLM explanation
+        # Generate LLM explanation (fallback without OpenAI)
         variant_rsids = [v.rsid for v in gene_variants]
-        # llm_explanation = generate_explanation(
-        #     drug=drug,
-        #     gene=gene,
-        #     diplotype=diplotype,
-        #     phenotype=phenotype,
-        #     variants=variant_rsids,
-        #     guideline=recommendation["guideline_reference"],
-        #     risk_label=risk_data["risk_label"]
-        # )
+        llm_explanation = {
+            "summary": f"Patient has {phenotype} phenotype for {gene}, resulting in {risk_data['risk_label']} risk with {drug}.",
+            "mechanism_of_action": f"{gene} is responsible for metabolizing {drug}. The {phenotype} phenotype affects the rate of drug metabolism.",
+            "variant_citations": variant_rsids,
+            "confidence_statement": "Based on CPIC guidelines and detected genetic variants."
+        }
         
         # Build response
         response = DrugAnalysisResponse(
@@ -96,12 +93,11 @@ async def analyze_pharmacogenomics(
                 detected_variants=gene_variants
             ),
             clinical_recommendation=ClinicalRecommendation(**recommendation),
-            # llm_generated_explanation=LLMExplanation(**llm_explanation),
-            
+            llm_generated_explanation=LLMExplanation(**llm_explanation),
             quality_metrics=QualityMetrics(
                 vcf_parsing_success=parsing_success,
                 variants_analyzed=len(gene_variants),
-                llm_response_generated=True
+                llm_response_generated=False
             )
         )
         
