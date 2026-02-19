@@ -1,6 +1,6 @@
 import AuthLayout from "@/components/AuthLayout";
 import Link from "next/link";
-import { ArrowRight, Lock, Mail, Github } from "lucide-react";
+import { ArrowRight, Lock, Mail } from "lucide-react";
 
 export default function Login() {
     return (
