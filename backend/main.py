@@ -227,7 +227,9 @@ async def upload_vcf(file: UploadFile = File(...), current_user = Depends(get_cu
             drug_analyses.append({
                 "drug": drug,
                 "risk_label": risk_data["risk_label"],
-                "severity": risk_data["severity"]
+                "severity": risk_data["severity"],
+                "recommendation": recommendation,
+                "llm_explanation": llm_explanation
             })
         
         return {

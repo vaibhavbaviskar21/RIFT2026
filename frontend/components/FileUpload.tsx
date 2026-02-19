@@ -4,7 +4,11 @@ import { useState, useCallback } from "react";
 import { UploadCloud, File, X, CheckCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 
-export default function FileUpload() {
+interface FileUploadProps {
+    onFileSelect?: (file: File) => void;
+}
+
+export default function FileUpload(props: FileUploadProps) {
     const router = useRouter();
     const [isDragging, setIsDragging] = useState(false);
     const [file, setFile] = useState<File | null>(null);
@@ -44,11 +48,15 @@ export default function FileUpload() {
         setFile(null);
     };
 
+    // Updated to accept a prop for handling the file in the parent
     const handleUpload = () => {
         if (!file) return;
-        // In a real app, we would upload to server here.
-        // For now, prompt the user or just redirect to processing.
-        router.push("/processing");
+        if (props.onFileSelect) {
+            props.onFileSelect(file);
+        } else {
+            // Fallback for existing behavior if no prop passed
+            router.push("/processing");
+        }
     };
 
     return (
@@ -56,8 +64,8 @@ export default function FileUpload() {
             {!file ? (
                 <div
                     className={`relative border-2 border-dashed rounded-3xl p-10 text-center transition-all duration-300 ${isDragging
-                            ? "border-primary bg-primary/10 scale-[1.02]"
-                            : "border-white/20 hover:border-white/40 hover:bg-white/5"
+                        ? "border-primary bg-primary/10 scale-[1.02]"
+                        : "border-white/20 hover:border-white/40 hover:bg-white/5"
                         }`}
                     onDragEnter={handleDrag}
                     onDragLeave={handleDrag}

@@ -38,7 +38,7 @@ export default function Navbar() {
 
                 {/* Center Links */}
                 <div className="hidden md:flex items-center gap-8 text-sm font-medium text-gray-300">
-                    <Link href="/analyze" className="hover:text-white transition-colors">Analyze</Link>
+                    <Link href="/dashboard/analyze" className="hover:text-white transition-colors">Analyze</Link>
                     {loggedIn && (
                         <Link href="/dashboard" className="hover:text-white transition-colors">Dashboard</Link>
                     )}

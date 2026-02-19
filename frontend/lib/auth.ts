@@ -1,9 +1,32 @@
 /**
- * Auth utility — communicates with the FastAPI backend's custom /auth/* endpoints.
- * Stores the JWT access_token in localStorage.
+ * Auth utility — communicates with the FastAPI backend's /auth/* endpoints.
+ * Stores the JWT access_token in an HttpOnly-like cookie (client-side cookie).
  */
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+const TOKEN_COOKIE = "pg_access_token";
+const USER_COOKIE = "pg_user";
+const COOKIE_MAX_AGE = 60 * 60 * 24 * 7; // 7 days in seconds
+
+// ─── Cookie Helpers ──────────────────────────────────────────────
+
+function setCookie(name: string, value: string, maxAge: number = COOKIE_MAX_AGE) {
+    if (typeof document === "undefined") return;
+    document.cookie = `${name}=${encodeURIComponent(value)}; path=/; max-age=${maxAge}; SameSite=Lax`;
+}
+
+function getCookie(name: string): string | null {
+    if (typeof document === "undefined") return null;
+    const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`));
+    return match ? decodeURIComponent(match[1]) : null;
+}
+
+function deleteCookie(name: string) {
+    if (typeof document === "undefined") return;
+    document.cookie = `${name}=; path=/; max-age=0`;
+}
+
+// ─── Auth Types ──────────────────────────────────────────────────
 
 export interface AuthUser {
     user_id: string;
@@ -11,6 +34,8 @@ export interface AuthUser {
     full_name: string | null;
     access_token: string;
 }
+
+// ─── Auth Functions ──────────────────────────────────────────────
 
 /** Signup via POST /auth/signup */
 export async function signup(email: string, password: string, full_name?: string): Promise<AuthUser> {
@@ -26,11 +51,13 @@ export async function signup(email: string, password: string, full_name?: string
     }
 
     const data = await res.json();
-    // Store token + user info
-    localStorage.setItem("access_token", data.access_token);
-    localStorage.setItem("user_email", data.email);
-    localStorage.setItem("user_id", data.user_id);
-    localStorage.setItem("user_name", data.full_name || "");
+    // Store token in cookie
+    setCookie(TOKEN_COOKIE, data.access_token);
+    setCookie(USER_COOKIE, JSON.stringify({
+        id: data.user_id,
+        email: data.email,
+        name: data.full_name || "",
+    }));
     return data;
 }
 
@@ -48,25 +75,24 @@ export async function login(email: string, password: string): Promise<AuthUser> 
     }
 
     const data = await res.json();
-    localStorage.setItem("access_token", data.access_token);
-    localStorage.setItem("user_email", data.email);
-    localStorage.setItem("user_id", data.user_id);
-    localStorage.setItem("user_name", data.full_name || "");
+    setCookie(TOKEN_COOKIE, data.access_token);
+    setCookie(USER_COOKIE, JSON.stringify({
+        id: data.user_id,
+        email: data.email,
+        name: data.full_name || "",
+    }));
     return data;
 }
 
-/** Logout — clears stored auth data */
+/** Logout — clears auth cookies */
 export function logout() {
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("user_email");
-    localStorage.removeItem("user_id");
-    localStorage.removeItem("user_name");
+    deleteCookie(TOKEN_COOKIE);
+    deleteCookie(USER_COOKIE);
 }
 
-/** Get stored access token (or null if not logged in) */
+/** Get stored access token from cookie (or null if not logged in) */
 export function getToken(): string | null {
-    if (typeof window === "undefined") return null;
-    return localStorage.getItem("access_token");
+    return getCookie(TOKEN_COOKIE);
 }
 
 /** Check if user is currently logged in */
@@ -74,16 +100,15 @@ export function isLoggedIn(): boolean {
     return !!getToken();
 }
 
-/** Get stored user info */
+/** Get stored user info from cookie */
 export function getUser(): { email: string; name: string; id: string } | null {
-    if (typeof window === "undefined") return null;
-    const token = localStorage.getItem("access_token");
-    if (!token) return null;
-    return {
-        email: localStorage.getItem("user_email") || "",
-        name: localStorage.getItem("user_name") || "",
-        id: localStorage.getItem("user_id") || "",
-    };
+    const raw = getCookie(USER_COOKIE);
+    if (!raw) return null;
+    try {
+        return JSON.parse(raw);
+    } catch {
+        return null;
+    }
 }
 
 /** Helper: make an authenticated fetch call to the backend */

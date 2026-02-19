@@ -87,7 +87,7 @@ export default function DashboardPage() {
                             <h2 className="text-xl font-bold text-gray-400 mb-2">No analyses yet</h2>
                             <p className="text-gray-500 text-sm mb-6">Upload a VCF file and analyze a drug to get started.</p>
                             <button
-                                onClick={() => router.push("/analyze")}
+                                onClick={() => router.push("/dashboard/analyze")}
                                 className="px-6 py-2.5 rounded-xl bg-primary hover:bg-violet-600 text-white font-bold text-sm transition-colors"
                             >
                                 Start Analysis
