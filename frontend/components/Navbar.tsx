@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { isLoggedIn, logout, getUser } from "@/lib/auth";
 import { useRouter, usePathname } from "next/navigation";
 import {
-    Shield, LogOut, User, LayoutDashboard, FlaskConical,
+    Dna, LogOut, User, LayoutDashboard, FlaskConical,
     Upload, Menu, X, ChevronRight
 } from "lucide-react";
 
@@ -53,19 +53,16 @@ export default function Navbar() {
                 <div className="container mx-auto px-6">
                     <div className="flex items-center justify-between h-16">
 
-                        {/* Logo — Clinical Branding */}
-                        <Link href="/" className="flex items-center gap-3 group">
-                            <div className="relative">
-                                <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-lg shadow-emerald-500/20 group-hover:shadow-emerald-500/40 transition-shadow">
-                                    <Shield className="w-5 h-5 text-white" />
-                                </div>
-                                <div className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-400 border-2 border-gray-950 animate-pulse"></div>
+                        {/* Logo */}
+                        <Link href="/" className="flex items-center gap-2.5 group">
+                            <div className="p-2 rounded-lg bg-white/5 group-hover:bg-primary/20 transition-colors border border-white/[0.06]">
+                                <Dna className="w-6 h-6 text-white" />
                             </div>
                             <div className="flex flex-col">
                                 <span className="text-[15px] font-bold tracking-tight leading-none text-white">
                                     PharmaGuard
                                 </span>
-                                <span className="text-[9px] font-medium tracking-[0.15em] uppercase text-emerald-400/70 leading-none mt-0.5">
+                                <span className="text-[9px] font-medium tracking-[0.15em] uppercase text-gray-400 leading-none mt-0.5">
                                     Clinical Decision Support
                                 </span>
                             </div>
@@ -82,8 +79,8 @@ export default function Navbar() {
                                             key={link.href}
                                             href={link.href}
                                             className={`flex items-center gap-2 px-4 py-2 rounded-md text-[13px] font-medium transition-all duration-200 ${active
-                                                    ? "bg-white/[0.08] text-white shadow-sm"
-                                                    : "text-gray-400 hover:text-gray-200 hover:bg-white/[0.04]"
+                                                ? "bg-white/[0.08] text-white shadow-sm"
+                                                : "text-gray-400 hover:text-gray-200 hover:bg-white/[0.04]"
                                                 }`}
                                         >
                                             <Icon className="w-3.5 h-3.5" />
@@ -168,8 +165,8 @@ export default function Navbar() {
                                         href={link.href}
                                         onClick={() => setMobileOpen(false)}
                                         className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${active
-                                                ? "bg-white/[0.06] text-white"
-                                                : "text-gray-400 hover:bg-white/[0.03] hover:text-white"
+                                            ? "bg-white/[0.06] text-white"
+                                            : "text-gray-400 hover:bg-white/[0.03] hover:text-white"
                                             }`}
                                     >
                                         <Icon className="w-4 h-4" />
