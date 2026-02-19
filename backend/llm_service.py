@@ -1,7 +1,7 @@
 import os
-from openrouter import OpenRouter
-from typing import Dict, List
 import json
+from openai import OpenAI
+from typing import Dict, List
 
 client = OpenRouter(
     api_key=os.getenv("OPENROUTER_API_KEY", ""),
@@ -156,35 +156,20 @@ Provide a comprehensive, personalized analysis of how THIS SPECIFIC PATIENT'S ge
 
 1. **Summary**: Explain in 2-3 sentences how the patient's specific variants ({', '.join(variants) if variants else 'their genetic profile'}) and {phenotype} phenotype affect their {drug} metabolism and why this results in {risk_label} risk.
 
-2. **Mechanism of Action**: Describe in detail:
-   - How {gene} normally metabolizes {drug}
-   - How the patient's {diplotype} diplotype and {phenotype} phenotype specifically alter this metabolism
-   - What clinical effects this has on drug efficacy and safety for THIS patient
-
-3. **Variant Analysis**: Reference the patient's specific variants ({', '.join(variants) if variants else 'genetic profile'}) and explain their functional impact.
-
-4. **Confidence Statement**: Explain the evidence quality based on {guideline} and the patient's variant detection.
-
-**IMPORTANT**: Make this analysis PERSONAL to the patient's genetic data. Don't give generic information.
-
-**Output Format (JSON only):**
-{{
-  "summary": "Personalized 2-3 sentence summary explaining THIS patient's specific risk based on their genetic variants",
-  "mechanism_of_action": "Detailed explanation of how THIS patient's {diplotype} and {phenotype} specifically affects {drug} metabolism",
-  "variant_citations": {json.dumps(variants)},
-  "confidence_statement": "Evidence quality statement based on CPIC guidelines and this patient's variant detection"
-}}
-
-Return ONLY valid JSON, no markdown or additional text."""
+    # Ensure API Key exists before attempting call
+    if not os.getenv("OPENAI_API_KEY"):
+        return fallback_response
 
     try:
         response = client.chat.send(
             model="qwen/qwen-2.5-72b-instruct",
             messages=[
-                {"role": "system", "content": "You are a pharmacogenomics expert providing evidence-based clinical interpretations. Always return valid JSON."},
-                {"role": "user", "content": prompt}
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
             ],
-            stream=False
+            response_format={"type": "json_object"},
+            temperature=0.3, # Low temperature for clinical consistency
+            max_tokens=300
         )
         
         content = response.choices[0].message.content.strip()
@@ -196,10 +181,7 @@ Return ONLY valid JSON, no markdown or additional text."""
             return fallback
         
         return result
-        
-    except json.JSONDecodeError as e:
-        print(f"LLM JSON parsing error: {e}")
-        return fallback
+
     except Exception as e:
         print(f"LLM generation error: {e}")
         return fallback

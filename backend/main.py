@@ -18,7 +18,7 @@ from models import (
 from vcf_parser import parse_vcf, variants_to_dict
 from diplotype_analyzer import determine_diplotype
 from risk_engine import assess_risk, get_recommendation
-from llm_service import generate_drug_analysis, generate_explanation, generate_comprehensive_analysis
+from llm_service import generate_explanation
 from lookup_tables import DRUG_GENE_RISK
 from database import db
 from auth import hash_password, verify_password, create_access_token, decode_access_token
@@ -37,17 +37,19 @@ app.add_middleware(
 @app.on_event("startup")
 async def startup():
     """Initialize database connection on startup"""
-    await db.connect()
-    print("Database connected successfully")
+    try:
+        await db.connect()
+        print("Database connected successfully")
+    except Exception as e:
+        print(f"WARNING: Failed to connect to database: {e}")
+        print("Server will start but database operations will fail")
+        print("Please check your DATABASE_URL in .env file")
 
 @app.on_event("shutdown")
 async def shutdown():
     """Close database connection on shutdown"""
-    try:
-        await db.disconnect()
-        print("Database disconnected")
-    except:
-        pass
+    await db.disconnect()
+    print("Database disconnected")
 
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Verify JWT token and return current user"""
@@ -225,7 +227,9 @@ async def upload_vcf(file: UploadFile = File(...), current_user = Depends(get_cu
             drug_analyses.append({
                 "drug": drug,
                 "risk_label": risk_data["risk_label"],
-                "severity": risk_data["severity"]
+                "severity": risk_data["severity"],
+                "recommendation": recommendation,
+                "llm_explanation": llm_explanation
             })
         
         return {
@@ -241,18 +245,22 @@ async def upload_vcf(file: UploadFile = File(...), current_user = Depends(get_cu
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"VCF upload failed: {str(e)}")
 
-@app.post("/query-drug")
+@app.post("/query-drug", response_model=DrugAnalysisResponse)
 async def query_drug(request: DrugQueryRequest, current_user = Depends(get_current_user)):
-    """Query any drug and get AI analysis based on user's genetic data"""
+    """Query specific drug analysis for user"""
     try:
-        drug_name = request.drug_name.strip()
+        drug_name = request.drug_name.upper().strip()
         
-        all_variants = await db.get_user_variants(str(current_user["id"]))
+        if drug_name not in DRUG_GENE_RISK:
+            raise HTTPException(status_code=404, detail=f"Drug '{drug_name}' not found in database")
         
-        if not all_variants:
+        gene = DRUG_GENE_RISK[drug_name]["gene"]
+        variants_db = await db.get_user_variants(str(current_user["id"]), gene)
+        
+        if not variants_db:
             raise HTTPException(
                 status_code=404, 
-                detail="No genetic data found. Please upload your VCF file first."
+                detail=f"No genetic data found for {gene}. Please upload your VCF file first."
             )
         
         pgx_profiles = await db.get_user_pgx_profiles(str(current_user["id"]))
@@ -265,7 +273,9 @@ async def query_drug(request: DrugQueryRequest, current_user = Depends(get_curre
             "star_allele": v["star_allele"] if "star_allele" in v and v["star_allele"] else None
         } for v in all_variants]
         
-        ai_response = generate_drug_analysis(drug_name, variants_summary)
+        diplotype, phenotype = determine_diplotype(variants, gene)
+        risk_data = assess_risk(drug_name, phenotype)
+        recommendation = get_recommendation(drug_name, phenotype)
         
         # Save to search history
         await db.save_search_history(
@@ -306,8 +316,6 @@ async def query_drug(request: DrugQueryRequest, current_user = Depends(get_curre
     except HTTPException:
         raise
     except Exception as e:
-        import traceback
-        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Drug query failed: {str(e)}")
 
 @app.get("/my-analyses")
