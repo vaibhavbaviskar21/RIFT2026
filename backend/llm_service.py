@@ -1,9 +1,75 @@
 import os
-from openai import OpenAI
+from openrouter import OpenRouter
 from typing import Dict, List
 import json
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
+client = OpenRouter(
+    api_key=os.getenv("OPENROUTER_API_KEY", ""),
+    server_url="https://ai.hackclub.com/proxy/v1"
+)
+
+def generate_drug_analysis(drug_name: str, variants: List[Dict]) -> str:
+    """Generate AI analysis for any drug based on user's genetic data"""
+    
+    fallback = f"Unable to generate analysis for {drug_name}. Please check your API key."
+    
+    if not os.getenv("OPENROUTER_API_KEY"):
+        return fallback
+    
+    variants_text = "\n".join([
+        f"- {v['rsid']} in {v['gene']}: {v['genotype']}" + 
+        (f" (allele: {v['star_allele']})" if v.get('star_allele') else "")
+        for v in variants
+    ])
+    
+    genes = ", ".join(set(v['gene'] for v in variants))
+    
+    prompt = f"""You are a clinical pharmacogenomics expert. Analyze how the drug {drug_name} interacts with the patient's genetic profile.
+
+**PATIENT'S GENETIC DATA:**
+{variants_text}
+
+**Genes Available:** {genes}
+
+**YOUR TASK:**
+Provide a comprehensive pharmacogenomic analysis of {drug_name} for THIS patient:
+
+1. Identify which genes (from the patient's data) are relevant to {drug_name} metabolism
+2. Explain how the patient's specific variants affect {drug_name} efficacy and safety
+3. Provide personalized recommendations for dosing or alternatives
+4. Assess the risk level (Safe/Adjust Dosage/Toxic/Ineffective)
+5. Cite relevant clinical guidelines (CPIC, FDA, etc.)
+
+Be specific to THIS patient's genetic variants. If {drug_name} doesn't interact with their available genes, explain that clearly.
+
+Provide a detailed, actionable clinical analysis."""
+
+    try:
+        response = client.chat.send(
+            model="qwen/qwen-2.5-72b-instruct",
+            messages=[
+                {"role": "system", "content": "You are a pharmacogenomics expert providing personalized drug analysis."},
+                {"role": "user", "content": prompt}
+            ],
+            stream=False
+        )
+        
+        return response.choices[0].message.content.strip()
+        
+    except Exception as e:
+        print(f"LLM generation error: {e}")
+        return fallback
+
+def _get_phenotype_description(phenotype: str) -> str:
+    """Get human-readable description of phenotype"""
+    descriptions = {
+        "PM": "Poor Metabolizer - significantly reduced enzyme activity",
+        "IM": "Intermediate Metabolizer - reduced enzyme activity",
+        "NM": "Normal Metabolizer - normal enzyme activity",
+        "RM": "Rapid Metabolizer - increased enzyme activity",
+        "UM": "Ultrarapid Metabolizer - significantly increased enzyme activity"
+    }
+    return descriptions.get(phenotype, "Unknown metabolizer status")
 
 def generate_explanation(
     drug: str,
@@ -43,53 +109,58 @@ def generate_explanation(
         "confidence_statement": "Based on CPIC guidelines and detected variants."
     }
     
-    if not os.getenv("OPENAI_API_KEY"):
+    if not os.getenv("OPENROUTER_API_KEY"):
         return fallback
     
     # RAG: Construct context-rich prompt with retrieved patient data + clinical knowledge
-    prompt = f"""You are a clinical pharmacogenomics expert analyzing drug-gene interactions.
+    prompt = f"""You are a clinical pharmacogenomics expert providing personalized drug analysis based on patient genetic data.
 
-**Patient Genetic Profile (Retrieved from Database):**
-- Drug: {drug}
-- Gene: {gene}
-- Diplotype: {diplotype}
-- Phenotype: {phenotype}
-- Detected Variants: {', '.join(variants) if variants else 'None'}
+**PATIENT'S GENETIC DATA (Retrieved from their VCF file):**
+- Drug Being Analyzed: {drug}
+- Metabolizing Gene: {gene}
+- Patient's Diplotype: {diplotype}
+- Patient's Phenotype: {phenotype} ({_get_phenotype_description(phenotype)})
+- Patient's Detected Variants: {', '.join(variants) if variants else 'None detected'}
 
-**Clinical Context (Augmented Knowledge):**
-- Risk Assessment: {risk_label}
-- Guideline Reference: {guideline}
+**CLINICAL RISK ASSESSMENT:**
+- Risk Level: {risk_label}
+- Clinical Guideline: {guideline}
 
-**Task:** Generate a clinical explanation that:
-1. Explains how the patient's genetic variants affect {drug} metabolism
-2. Describes the mechanism of action for {gene}
-3. Justifies the {risk_label} risk assessment
-4. Provides actionable clinical insights
+**YOUR TASK:**
+Provide a comprehensive, personalized analysis of how THIS SPECIFIC PATIENT'S genetic makeup affects their response to {drug}.
+
+1. **Summary**: Explain in 2-3 sentences how the patient's specific variants ({', '.join(variants) if variants else 'their genetic profile'}) and {phenotype} phenotype affect their {drug} metabolism and why this results in {risk_label} risk.
+
+2. **Mechanism of Action**: Describe in detail:
+   - How {gene} normally metabolizes {drug}
+   - How the patient's {diplotype} diplotype and {phenotype} phenotype specifically alter this metabolism
+   - What clinical effects this has on drug efficacy and safety for THIS patient
+
+3. **Variant Analysis**: Reference the patient's specific variants ({', '.join(variants) if variants else 'genetic profile'}) and explain their functional impact.
+
+4. **Confidence Statement**: Explain the evidence quality based on {guideline} and the patient's variant detection.
+
+**IMPORTANT**: Make this analysis PERSONAL to the patient's genetic data. Don't give generic information.
 
 **Output Format (JSON only):**
 {{
-  "summary": "2-3 sentence clinical summary explaining the patient's risk and genetic basis",
-  "mechanism_of_action": "Detailed explanation of how {gene} metabolizes {drug} and how the {phenotype} phenotype impacts this process",
+  "summary": "Personalized 2-3 sentence summary explaining THIS patient's specific risk based on their genetic variants",
+  "mechanism_of_action": "Detailed explanation of how THIS patient's {diplotype} and {phenotype} specifically affects {drug} metabolism",
   "variant_citations": {json.dumps(variants)},
-  "confidence_statement": "Statement about evidence quality based on CPIC guidelines and variant detection"
+  "confidence_statement": "Evidence quality statement based on CPIC guidelines and this patient's variant detection"
 }}
 
 Return ONLY valid JSON, no markdown or additional text."""
 
     try:
         # Generate LLM response with optimized parameters
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",  # Fast, cost-effective model
+        response = client.chat.send(
+            model="qwen/qwen-2.5-72b-instruct",
             messages=[
-                {
-                    "role": "system", 
-                    "content": "You are a pharmacogenomics expert providing evidence-based clinical interpretations. Always return valid JSON."
-                },
+                {"role": "system", "content": "You are a pharmacogenomics expert providing evidence-based clinical interpretations. Always return valid JSON."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.3,  # Low temperature for consistent, factual responses
-            max_tokens=600,   # Sufficient for detailed explanation
-            response_format={"type": "json_object"}  # Force JSON output
+            stream=False
         )
         
         content = response.choices[0].message.content.strip()
