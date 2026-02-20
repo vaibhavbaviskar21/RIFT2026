@@ -171,7 +171,7 @@ Schema compliance is enforced using Pydantic validation.
 ### 1️⃣ Clone Repository
 
 ```bash
-git clone https://github.com/your-username/pharmaguard.git
+git clone https://github.com/vaibhavbaviskar21/RIFT2026.git
 cd pharmaguard
 ```
 
