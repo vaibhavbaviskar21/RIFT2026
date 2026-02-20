@@ -150,6 +150,14 @@ DRUG_GENE_RISK = {
         "IM": {"risk": "Adjust Dosage", "severity": "high", "confidence": 0.89},
         "NM": {"risk": "Safe", "severity": "none", "confidence": 0.97},
     },
+
+    "PARACETAMOL": {
+        "gene": "CYP2D6",
+        "PM": {"risk": "Safe", "severity": "none", "confidence": 0.90},
+        "IM": {"risk": "Safe", "severity": "none", "confidence": 0.92},
+        "NM": {"risk": "Safe", "severity": "none", "confidence": 0.95},
+        "UM": {"risk": "Potential Toxicity", "severity": "moderate", "confidence": 0.85},
+    },
 }
 
 # CPIC Recommendations
@@ -274,6 +282,29 @@ CPIC_RECOMMENDATIONS = {
             "guideline": "CPIC Guideline for DPYD and Fluorouracil",
             "action": "Use standard dosing protocol",
             "dose_adjustment": "Standard protocol-based dosing",
+        },
+    },
+
+    "PARACETAMOL": {
+        "PM": {
+            "guideline": "Standard Pharmacogenomic Guidelines",
+            "action": "Safe to use standard labeling",
+            "dose_adjustment": "Standard dose",
+        },
+        "IM": {
+            "guideline": "Standard Pharmacogenomic Guidelines",
+            "action": "Safe to use standard labeling",
+            "dose_adjustment": "Standard dose",
+        },
+        "NM": {
+            "guideline": "Standard Pharmacogenomic Guidelines",
+            "action": "Safe to use standard labeling",
+            "dose_adjustment": "Standard dose",
+        },
+        "UM": {
+            "guideline": "Standard Pharmacogenomic Guidelines/Clinical Alerts",
+            "action": "Use with caution",
+            "dose_adjustment": "Monitor for potential hepatotoxicity if high consumption",
         },
     },
 }

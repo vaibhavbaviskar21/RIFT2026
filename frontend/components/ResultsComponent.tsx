@@ -21,8 +21,10 @@ export interface VariantResult {
 
 // Maps risk_label → Tailwind styles
 function getRiskStyles(riskLabel: string) {
-    const r = riskLabel.toLowerCase();
-    if (r === "safe") return {
+    const r = (riskLabel || "").toLowerCase();
+
+    // SAFE PROFILE
+    if (r === "safe" || r.includes("normal") || r.includes("no risk")) return {
         border: "border-emerald-500/30",
         bg: "bg-emerald-500/8",
         text: "text-emerald-400",
@@ -30,7 +32,9 @@ function getRiskStyles(riskLabel: string) {
         icon: <CheckCircle className="w-4 h-4" />,
         glow: "shadow-[0_0_20px_-5px_rgba(16,185,129,0.2)]"
     };
-    if (r === "adjust dosage") return {
+
+    // WARNING PROFILE
+    if (r.includes("adjust") || r.includes("caution") || r.includes("moderate") || r.includes("intermediate")) return {
         border: "border-amber-500/30",
         bg: "bg-amber-500/8",
         text: "text-amber-400",
@@ -38,7 +42,9 @@ function getRiskStyles(riskLabel: string) {
         icon: <AlertTriangle className="w-4 h-4" />,
         glow: "shadow-[0_0_20px_-5px_rgba(245,158,11,0.2)]"
     };
-    if (r === "toxic" || r === "ineffective") return {
+
+    // DANGER PROFILE
+    if (r.includes("toxic") || r.includes("ineffective") || r.includes("avoid") || r.includes("critical") || r.includes("high risk")) return {
         border: "border-red-500/30",
         bg: "bg-red-500/8",
         text: "text-red-400",
@@ -46,6 +52,8 @@ function getRiskStyles(riskLabel: string) {
         icon: <XCircle className="w-4 h-4" />,
         glow: "shadow-[0_0_20px_-5px_rgba(239,68,68,0.2)]"
     };
+
+    // DEFAULT / UNKNOWN
     return {
         border: "border-slate-500/30",
         bg: "bg-slate-500/8",
@@ -69,6 +77,41 @@ function getSeverityLabel(severity: string) {
 
 export default function ResultsComponent({ data }: { data: VariantResult }) {
     const [expandedDrug, setExpandedDrug] = useState<number | null>(null);
+    const [loadingAI, setLoadingAI] = useState<number | null>(null);
+
+    const handleExpandDrug = async (idx: number) => {
+        if (expandedDrug === idx) {
+            setExpandedDrug(null);
+            return;
+        }
+
+        setExpandedDrug(idx);
+        const drug = data.drug_analyses[idx];
+
+        // If AI is pending, fetch it now
+        if (drug.llm_explanation?.summary?.includes("pending") || !drug.llm_explanation?.mechanism_of_action || drug.llm_explanation?.confidence_statement === "Preliminary") {
+            setLoadingAI(idx);
+            try {
+                const { authFetch } = await import("@/lib/auth");
+                const res = await authFetch("/get-ai-deepdive", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ drug_name: drug.drug }),
+                });
+
+                if (res.ok) {
+                    const aiData = await res.json();
+                    // Update our local state (though it won't persist to the 'data' prop directly without a parent refresh, 
+                    // for a hackathon we'll just swap it in the local display if possible or rely on the next refresh)
+                    drug.llm_explanation = aiData;
+                }
+            } catch (err) {
+                console.error("AI Fetch error:", err);
+            } finally {
+                setLoadingAI(null);
+            }
+        }
+    };
     const [expandedGenomics, setExpandedGenomics] = useState(false);
     const [filter, setFilter] = useState("");
     const [copied, setCopied] = useState(false);
@@ -210,10 +253,19 @@ export default function ResultsComponent({ data }: { data: VariantResult }) {
                             const isOpen = expandedDrug === idx;
 
                             return (
-                                <div key={idx} className={`transition-colors ${isOpen ? risk.bg : ""}`}>
+                                <div
+                                    key={idx}
+                                    className={`group relative rounded-2xl border transition-all duration-300 overflow-hidden cursor-pointer ${isOpen ? `${risk.border} ${risk.bg} ${risk.glow}` : "border-white/[0.08] hover:border-white/20 bg-white/[0.01] hover:bg-white/[0.03]"
+                                        }`}
+                                    onClick={() => handleExpandDrug(idx)}
+                                >
+                                    {loadingAI === idx && (
+                                        <div className="absolute inset-x-0 top-0 h-0.5 bg-primary/20 overflow-hidden">
+                                            <div className="h-full bg-primary animate-[loading_1.5s_infinite]"></div>
+                                        </div>
+                                    )}
                                     {/* Drug Header Row */}
                                     <button
-                                        onClick={() => setExpandedDrug(isOpen ? null : idx)}
                                         className="w-full p-5 flex items-center justify-between hover:bg-white/[0.02] transition-colors text-left"
                                     >
                                         <div className="flex items-center gap-4">

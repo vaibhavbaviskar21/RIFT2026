@@ -21,7 +21,7 @@ export default function Login() {
 
         try {
             await login(email, password);
-            router.push("/upload");
+            router.push("/dashboard/analyze");
         } catch (err: any) {
             setError(err.message || "Login failed");
         } finally {

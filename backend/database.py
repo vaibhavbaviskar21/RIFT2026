@@ -111,20 +111,22 @@ class DatabaseService:
                 VALUES (:user_id, :vcf_upload_id, :rsid, :gene, :star_allele, :genotype, :chromosome, :position)
             """
             
-            for v in variants:
-                await self.database.execute(
-                    query=query,
-                    values={
-                        "user_id": user_id,
-                        "vcf_upload_id": vcf_upload_id,
-                        "rsid": v["rsid"],
-                        "gene": v["gene"],
-                        "star_allele": v.get("star_allele"),
-                        "genotype": v["genotype"],
-                        "chromosome": v["chromosome"],
-                        "position": v["position"]
-                    }
-                )
+            values = [
+                {
+                    "user_id": user_id,
+                    "vcf_upload_id": vcf_upload_id,
+                    "rsid": v["rsid"],
+                    "gene": v["gene"],
+                    "star_allele": v.get("star_allele"),
+                    "genotype": v["genotype"],
+                    "chromosome": v["chromosome"],
+                    "position": v["position"]
+                }
+                for v in variants
+            ]
+            
+            if values:
+                await self.database.execute_many(query=query, values=values)
             
             return len(variants)
         except Exception as e:

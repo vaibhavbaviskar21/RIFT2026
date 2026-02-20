@@ -6,7 +6,7 @@ export function middleware(request: NextRequest) {
     const token = request.cookies.get("pg_access_token")?.value;
 
     // Define protected routes
-    const protectedRoutes = ["/dashboard", "/analyze", "/upload", "/processing", "/results"];
+    const protectedRoutes = ["/dashboard"];
 
     const isProtectedRoute = protectedRoutes.some(route =>
         request.nextUrl.pathname.startsWith(route)

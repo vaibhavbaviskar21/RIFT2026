@@ -3,9 +3,11 @@ import json
 from openai import OpenAI
 from typing import Dict, List
 
-# Initialize OpenAI Client
-# Uses the API key from environment variables
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
+# Initialize Client (Support for OpenRouter & OpenAI)
+api_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY", "")
+base_url = "https://openrouter.ai/api/v1" if os.getenv("OPENROUTER_API_KEY") else None
+
+client = OpenAI(api_key=api_key, base_url=base_url)
 
 def generate_explanation(
     drug: str,
@@ -34,7 +36,8 @@ def generate_explanation(
     }
 
     # Ensure API Key exists before attempting call
-    if not os.getenv("OPENAI_API_KEY"):
+    if not api_key:
+        print("❌ LLM Service Error: No API Key found (OPENAI_API_KEY or OPENROUTER_API_KEY)")
         return fallback_response
 
     try:
@@ -69,32 +72,49 @@ def generate_explanation(
         }}
         """
 
-        # ---------------------------------------------------------
-        # 3. Safe Integration & Error Handling
-        # ---------------------------------------------------------
-        response = client.chat.completions.create(
-            model="gpt-4o",  # Using gpt-4o for JSON mode support & accuracy
-            messages=[
+        # Prepare completion parameters
+        kwargs = {
+            "model": os.getenv("LLM_MODEL", "google/gemini-2.0-flash-001"),
+            "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            response_format={"type": "json_object"},
-            temperature=0.3, # Low temperature for clinical consistency
-            max_tokens=300
-        )
+            "temperature": 0.3,
+            "max_tokens": 500
+        }
+
+        # Some providers/models on OpenRouter don't support response_format
+        # We'll try to use it but catch the error if it fails
+        try:
+            response = client.chat.completions.create(
+                **kwargs,
+                response_format={"type": "json_object"} if "gemini" not in kwargs["model"].lower() else None
+            )
+        except Exception:
+            response = client.chat.completions.create(**kwargs)
 
         content = response.choices[0].message.content
         if not content:
             return fallback_response
 
-        # Parse JSON output
-        result = json.loads(content)
+        # Parse JSON output (handle markdown blocks if present)
+        clean_content = content.strip()
+        if clean_content.startswith("```json"):
+            clean_content = clean_content.replace("```json", "", 1).rsplit("```", 1)[0].strip()
+        elif clean_content.startswith("```"):
+            clean_content = clean_content.replace("```", "", 1).rsplit("```", 1)[0].strip()
+            
+        try:
+            result = json.loads(clean_content)
+        except json.JSONDecodeError:
+            print(f"❌ Failed to parse LLM JSON: {clean_content[:100]}...")
+            return fallback_response
         
         # Validate keys exist for Pydantic model
         required_keys = ["summary", "mechanism_of_action", "variant_citations", "confidence_statement"]
         for key in required_keys:
             if key not in result:
-                result[key] = fallback_response[key]
+                result[key] = fallback_response.get(key, "Information unavailable")
 
         return result
 

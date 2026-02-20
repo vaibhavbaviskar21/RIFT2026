@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: pharmaguard-api
+    runtime: python
+    region: singapore
+    plan: free
+    repo: https://github.com/vaibhavbaviskar21/RIFT2026
+    # Important: Point to the backend directory
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
+      - key: JWT_SECRET_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: LLM_MODEL
+        value: google/gemini-2.0-flash-001
+      - key: PYTHON_VERSION
+        value: "3.13.0"

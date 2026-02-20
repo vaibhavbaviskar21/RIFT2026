@@ -7,13 +7,18 @@ FILE_EXTENSION = ".vcf"
 
 # Genes and variants based on RIFT 2026 requirements
 PGX_VARIANTS = [
+    # CYP2C19 — rs4244285 = *2  (real CPIC rsID)
     {"chrom": "10", "pos": "94842866", "rsid": "rs4244285", "ref": "G", "alt": "A", "gene": "CYP2C19", "star": "*2"},
-    {"chrom": "10", "pos": "94842867", "rsid": "rs4986893", "ref": "G", "alt": "A", "gene": "CYP2C19", "star": "*3"},
+    # CYP2D6 — rs3892097 = *4   (real CPIC rsID, Poor Metabolizer allele)
+    {"chrom": "22", "pos": "42526694", "rsid": "rs3892097", "ref": "C", "alt": "T", "gene": "CYP2D6", "star": "*4"},
+    # SLCO1B1 — rs4149056 = *5  (real CPIC rsID)
     {"chrom": "12", "pos": "21178611", "rsid": "rs4149056", "ref": "T", "alt": "C", "gene": "SLCO1B1", "star": "*5"},
-    {"chrom": "22", "pos": "42126611", "rsid": "rs12248560", "ref": "C", "alt": "T", "gene": "CYP2D6", "star": "*17"},
-    {"chrom": "19", "pos": "38499000", "rsid": "rs1234567", "ref": "A", "alt": "G", "gene": "CYP2C9", "star": "*2"},
-    {"chrom": "7", "pos": "99612000", "rsid": "rs7654321", "ref": "C", "alt": "T", "gene": "TPMT", "star": "*3C"},
-    {"chrom": "1", "pos": "97543210", "rsid": "rs1111111", "ref": "G", "alt": "A", "gene": "DPYD", "star": "*2A"}
+    # CYP2C9 — rs1799853 = *2   (real CPIC rsID)
+    {"chrom": "10", "pos": "94981297", "rsid": "rs1799853", "ref": "C", "alt": "T", "gene": "CYP2C9", "star": "*2"},
+    # TPMT — rs1142345 = *3C    (real CPIC rsID)
+    {"chrom": "6", "pos": "18130918", "rsid": "rs1142345", "ref": "A", "alt": "G", "gene": "TPMT", "star": "*3C"},
+    # DPYD — rs3918290 = *2A    (real CPIC rsID)
+    {"chrom": "1", "pos": "97915614", "rsid": "rs3918290", "ref": "C", "alt": "T", "gene": "DPYD", "star": "*2A"},
 ]
 
 VCF_HEADER = """##fileformat=VCFv4.2

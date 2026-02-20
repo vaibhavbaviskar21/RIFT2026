@@ -1,7 +1,7 @@
 from typing import List, Dict
 from models import Variant
 
-TARGET_GENES = ["CYP2D6", "CYP2C19", "CYP2C9", "SLCO1B1", "TPMT", "DPYD"]
+
 
 def parse_vcf(file_content: bytes) -> tuple[List[Variant], bool, str]:
     """
@@ -62,7 +62,10 @@ def parse_vcf(file_content: bytes) -> tuple[List[Variant], bool, str]:
                 gene = info.get('GENE', '')
                 
                 # Filter for pharmacogenomic target genes only
-                if gene not in TARGET_GENES:
+                from lookup_tables import DRUG_GENE_RISK
+                VALID_GENES = set(d["gene"] for d in DRUG_GENE_RISK.values())
+                
+                if gene not in VALID_GENES:
                     continue
                 
                 rsid = info.get('RS', id_field if id_field != '.' else '')
@@ -97,7 +100,7 @@ def parse_vcf(file_content: bytes) -> tuple[List[Variant], bool, str]:
                 continue
         
         if variant_count == 0:
-            return [], False, f"No pharmacogenomic variants found for target genes: {', '.join(TARGET_GENES)}"
+            return [], False, "No pharmacogenomic variants found for recognized clinical genes in the database."
         
     except Exception as e:
         success = False

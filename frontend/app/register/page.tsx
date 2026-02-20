@@ -30,8 +30,8 @@ export default function Register() {
         try {
             await signup(email, password, fullName);
             setSuccess(true);
-            // Redirect to upload after short delay
-            setTimeout(() => router.push("/upload"), 1500);
+            // Redirect to analysis page after short delay
+            setTimeout(() => router.push("/dashboard/analyze"), 1500);
         } catch (err: any) {
             setError(err.message || "Signup failed");
         } finally {

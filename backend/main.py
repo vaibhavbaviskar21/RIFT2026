@@ -200,16 +200,14 @@ async def upload_vcf(file: UploadFile = File(...), current_user = Depends(get_cu
             risk_data = assess_risk(drug, phenotype)
             recommendation = get_recommendation(drug, phenotype)
             
-            variant_rsids = [v.rsid for v in gene_variants]
-            llm_explanation = generate_explanation(
-                drug=drug,
-                gene=gene,
-                diplotype=diplotype,
-                phenotype=phenotype,
-                variants=variant_rsids,
-                guideline=recommendation["guideline_reference"],
-                risk_label=risk_data["risk_label"]
-            )
+            # Skip LLM during bulk upload to speed up response 
+            # (Generated on-demand when user clicks a drug)
+            llm_explanation = {
+                "summary": "AI breakdown pending...",
+                "mechanism_of_action": "Click to generate detailed mechanism.",
+                "variant_citations": [],
+                "confidence_statement": "Preliminary"
+            }
             
             await db.save_drug_analysis(
                 user_id=str(current_user["id"]),
@@ -244,6 +242,64 @@ async def upload_vcf(file: UploadFile = File(...), current_user = Depends(get_cu
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"VCF upload failed: {str(e)}")
+
+@app.post("/get-ai-deepdive")
+async def get_ai_deepdive(request: DrugQueryRequest, current_user = Depends(get_current_user)):
+    """Generate or retrieve AI deep-dive explanation for a drug interaction"""
+    try:
+        drug_name = request.drug_name.upper().strip()
+        
+        # Check if analysis exists
+        existing = await db.get_drug_analysis(str(current_user["id"]), drug_name)
+        if not existing:
+            raise HTTPException(status_code=404, detail="Drug analysis record not found. Please query the drug first.")
+        
+        # If it already has a real summary, just return it
+        llm_exp = json.loads(existing["llm_explanation"]) if isinstance(existing["llm_explanation"], str) else existing["llm_explanation"]
+        
+        if llm_exp and "AI breakdown pending" not in llm_exp.get("summary", "") and "Preliminary" not in llm_exp.get("confidence_statement", ""):
+            return llm_exp
+
+        # Otherwise generate it now
+        gene = existing["gene"]
+        phenotype = existing["phenotype"]
+        diplotype = existing["diplotype"]
+        
+        # Get variants for this gene to pass to LLM
+        variants_db = await db.get_user_variants(str(current_user["id"]), gene)
+        variant_rsids = [v["rsid"] for v in variants_db]
+        
+        recommendation = get_recommendation(drug_name, phenotype)
+        
+        new_llm_explanation = generate_explanation(
+            drug=drug_name,
+            gene=gene,
+            diplotype=diplotype,
+            phenotype=phenotype,
+            variants=variant_rsids,
+            guideline=recommendation["guideline_reference"],
+            risk_label=existing["risk_label"]
+        )
+        
+        # Update database with permanent explanation
+        await db.save_drug_analysis(
+            user_id=str(current_user["id"]),
+            drug=drug_name,
+            gene=gene,
+            risk_label=existing["risk_label"],
+            severity=existing["severity"],
+            confidence_score=existing["confidence_score"],
+            phenotype=phenotype,
+            diplotype=diplotype,
+            recommendation=json.loads(existing["recommendation"]) if isinstance(existing["recommendation"], str) else existing["recommendation"],
+            llm_explanation=new_llm_explanation
+        )
+        
+        return new_llm_explanation
+        
+    except Exception as e:
+        print(f"Deepdive failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/query-drug", response_model=DrugAnalysisResponse)
 async def query_drug(request: DrugQueryRequest, current_user = Depends(get_current_user)):

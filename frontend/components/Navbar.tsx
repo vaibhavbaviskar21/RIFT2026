@@ -6,7 +6,7 @@ import { isLoggedIn, logout, getUser } from "@/lib/auth";
 import { useRouter, usePathname } from "next/navigation";
 import {
     Dna, LogOut, User, LayoutDashboard, FlaskConical,
-    Upload, Menu, X, ChevronRight
+    Menu, X, ChevronRight
 } from "lucide-react";
 
 export default function Navbar() {
@@ -36,7 +36,6 @@ export default function Navbar() {
         ...(loggedIn ? [
             { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
             { href: "/dashboard/analyze", label: "Analyze", icon: FlaskConical },
-            { href: "/upload", label: "Upload VCF", icon: Upload },
         ] : []),
     ];
 
