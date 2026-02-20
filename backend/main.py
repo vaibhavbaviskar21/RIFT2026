@@ -18,7 +18,7 @@ from models import (
 from vcf_parser import parse_vcf, variants_to_dict
 from diplotype_analyzer import determine_diplotype
 from risk_engine import assess_risk, get_recommendation
-from llm_service import generate_explanation
+from gemini_service import generate_explanation_gemini as generate_explanation
 from lookup_tables import DRUG_GENE_RISK
 from database import db
 from auth import hash_password, verify_password, create_access_token, decode_access_token
