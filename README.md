@@ -1,7 +1,3 @@
-Here is a **complete, competition-ready README.md** you can directly use and customize.
-
----
-
 # 🧬 PharmaGuard – AI-Powered Pharmacogenomic Risk Analyzer
 
 > Preventing adverse drug reactions through precision genomics and AI.
