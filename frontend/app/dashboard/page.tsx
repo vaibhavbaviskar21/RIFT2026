@@ -6,7 +6,7 @@ import { useState, useEffect } from "react";
 import {
     Activity, Pill, Calendar, ChevronDown, ChevronUp,
     AlertCircle, ArrowRight, Loader2, CheckCircle,
-    FlaskConical, Clock, Search, FileText, ShieldCheck
+    FlaskConical, Clock, Search, FileText, ShieldCheck, Brain
 } from "lucide-react";
 import { isLoggedIn, authFetch, getUser } from "@/lib/auth";
 import { useRouter } from "next/navigation";
@@ -236,7 +236,43 @@ export default function DashboardPage() {
 
                     {/* Query Result */}
                     {queryResult && !queryLoading && (
-                        <div className="mb-8 animate-[fadeIn_0.3s_ease-out]">
+                        <div className="mb-8 animate-[fadeIn_0.5s_ease-out]">
+                            {/* AI Clinical Insight Box */}
+                            <div className="mb-6 rounded-2xl border border-primary/20 bg-primary/5 p-6 relative overflow-hidden group">
+                                <div className="absolute top-0 right-0 p-8 bg-primary/10 blur-[60px] rounded-full -translate-y-12 translate-x-12"></div>
+                                <div className="relative z-10">
+                                    <div className="flex items-center gap-2 mb-4">
+                                        <div className="p-1.5 rounded-lg bg-primary/20">
+                                            <Brain className="w-5 h-5 text-primary" />
+                                        </div>
+                                        <div>
+                                            <h3 className="text-sm font-bold text-white">AI Clinical Insight</h3>
+                                            <p className="text-[10px] text-primary/60 uppercase tracking-widest font-mono">Gemini 2.0 Flash • Real-time Analysis</p>
+                                        </div>
+                                        <div className="ml-auto">
+                                            <span className="px-2 py-1 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-[10px] text-emerald-400 font-bold">
+                                                Active Session
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <div className="space-y-4">
+                                        <p className="text-sm text-gray-200 leading-relaxed italic">
+                                            "{queryResult.drug_analyses[0].llm_explanation?.summary || "Analyzing biological pathway correlations..."}"
+                                        </p>
+                                        <div className="flex items-center gap-4 pt-2 border-t border-white/5">
+                                            <div className="flex items-center gap-1.5">
+                                                <div className="w-1 h-1 rounded-full bg-primary/60"></div>
+                                                <span className="text-[10px] text-gray-500 font-mono">Mechanism: {queryResult.drug_analyses[0].llm_explanation?.mechanism_of_action?.slice(0, 50)}...</span>
+                                            </div>
+                                            <div className="flex items-center gap-1.5">
+                                                <div className="w-1 h-1 rounded-full bg-primary/60"></div>
+                                                <span className="text-[10px] text-gray-500 font-mono">Confidence: {queryResult.drug_analyses[0].llm_explanation?.confidence_statement}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
                             <ResultsComponent data={queryResult} />
                         </div>
                     )}

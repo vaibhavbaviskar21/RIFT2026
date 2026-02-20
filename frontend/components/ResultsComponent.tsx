@@ -76,7 +76,9 @@ function getSeverityLabel(severity: string) {
 }
 
 export default function ResultsComponent({ data }: { data: VariantResult }) {
-    const [expandedDrug, setExpandedDrug] = useState<number | null>(null);
+    const [expandedDrug, setExpandedDrug] = useState<number | null>(
+        data.drug_analyses.length === 1 ? 0 : null
+    );
     const [loadingAI, setLoadingAI] = useState<number | null>(null);
 
     const handleExpandDrug = async (idx: number) => {
