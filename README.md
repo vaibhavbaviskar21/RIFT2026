@@ -10,7 +10,7 @@ Here is a **complete, competition-ready README.md** you can directly use and cus
 
 ## 🌍 Live Application
 
-🔗 **Live Demo:** [https://your-live-app-url.com](https://your-live-app-url.com)
+🔗 **Live Demo:** [https://rainbow-kulfi-5e6179.netlify.app/](https://rainbow-kulfi-5e6179.netlify.app/)
 🎥 **LinkedIn Demo Video:** [https://linkedin.com/your-video-link](https://linkedin.com/your-video-link)
 
 ---
