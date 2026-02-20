@@ -4,7 +4,6 @@ services:
     runtime: python
     region: singapore
     plan: free
-    repo: https://github.com/vaibhavbaviskar21/RIFT2026
     # Important: Point to the backend directory
     rootDir: backend
     buildCommand: pip install -r requirements.txt

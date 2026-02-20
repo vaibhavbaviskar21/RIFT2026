@@ -33,6 +33,9 @@ def parse_vcf(file_content: bytes) -> tuple[List[Variant], bool, str]:
         if not lines:
             return [], False, "VCF file is empty."
         
+        from lookup_tables import DRUG_GENE_RISK
+        VALID_GENES = set(d["gene"] for d in DRUG_GENE_RISK.values())
+
         variant_count = 0
         for line_num, line in enumerate(lines, 1):
             # Skip VCF headers and empty lines
@@ -62,9 +65,6 @@ def parse_vcf(file_content: bytes) -> tuple[List[Variant], bool, str]:
                 gene = info.get('GENE', '')
                 
                 # Filter for pharmacogenomic target genes only
-                from lookup_tables import DRUG_GENE_RISK
-                VALID_GENES = set(d["gene"] for d in DRUG_GENE_RISK.values())
-                
                 if gene not in VALID_GENES:
                     continue
                 
