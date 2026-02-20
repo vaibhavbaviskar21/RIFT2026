@@ -158,6 +158,21 @@ DRUG_GENE_RISK = {
         "NM": {"risk": "Safe", "severity": "none", "confidence": 0.95},
         "UM": {"risk": "Potential Toxicity", "severity": "moderate", "confidence": 0.85},
     },
+
+    "ASPIRIN": {
+        "gene": "CYP2C19",
+        "PM": {"risk": "Moderate Risk", "severity": "low", "confidence": 0.88},
+        "IM": {"risk": "Safe", "severity": "none", "confidence": 0.94},
+        "NM": {"risk": "Safe", "severity": "none", "confidence": 0.97},
+        "UM": {"risk": "Increased Bleeding Risk", "severity": "moderate", "confidence": 0.82},
+    },
+
+    "IBUPROFEN": {
+        "gene": "CYP2C9",
+        "PM": {"risk": "Increased Toxicity", "severity": "high", "confidence": 0.91},
+        "IM": {"risk": "Adjust Dosage", "severity": "moderate", "confidence": 0.89},
+        "NM": {"risk": "Safe", "severity": "none", "confidence": 0.96},
+    },
 }
 
 # CPIC Recommendations
@@ -286,25 +301,63 @@ CPIC_RECOMMENDATIONS = {
     },
 
     "PARACETAMOL": {
+        "gene": "Standard Pharmacogenomic Guidelines",
         "PM": {
-            "guideline": "Standard Pharmacogenomic Guidelines",
             "action": "Safe to use standard labeling",
             "dose_adjustment": "Standard dose",
         },
         "IM": {
-            "guideline": "Standard Pharmacogenomic Guidelines",
             "action": "Safe to use standard labeling",
             "dose_adjustment": "Standard dose",
         },
         "NM": {
-            "guideline": "Standard Pharmacogenomic Guidelines",
             "action": "Safe to use standard labeling",
             "dose_adjustment": "Standard dose",
         },
         "UM": {
-            "guideline": "Standard Pharmacogenomic Guidelines/Clinical Alerts",
             "action": "Use with caution",
             "dose_adjustment": "Monitor for potential hepatotoxicity if high consumption",
+        },
+    },
+
+    "ASPIRIN": {
+        "PM": {
+            "guideline": "Clinical PGx Guidelines for Aspirin",
+            "action": "Consider alternative antiplatelet if for cardiac prevention",
+            "dose_adjustment": "Standard dose; monitor for potential platelete resistance",
+        },
+        "IM": {
+            "guideline": "Clinical PGx Guidelines for Aspirin",
+            "action": "Safe to use standard dose",
+            "dose_adjustment": "Standard dose",
+        },
+        "NM": {
+            "guideline": "Clinical PGx Guidelines for Aspirin",
+            "action": "Safe to use standard dose",
+            "dose_adjustment": "Standard dose",
+        },
+        "UM": {
+            "guideline": "Clinical PGx Guidelines for Aspirin",
+            "action": "Use with caution. Monitor for bleeding complications.",
+            "dose_adjustment": "Consider lower dose in elderly or high-risk patients",
+        },
+    },
+
+    "IBUPROFEN": {
+        "PM": {
+            "guideline": "CPIC Guideline for NSAIDs and CYP2C9",
+            "action": "Avoid or use 25-50% of the normal starting dose",
+            "dose_adjustment": "Use alternative pain relief such as paracetamol",
+        },
+        "IM": {
+            "guideline": "CPIC Guideline for NSAIDs and CYP2C9",
+            "action": "Use with caution at standard doses",
+            "dose_adjustment": "Monitor for renal and GI side effects",
+        },
+        "NM": {
+            "guideline": "CPIC Guideline for NSAIDs and CYP2C9",
+            "action": "Standard labeling recommended",
+            "dose_adjustment": "Standard dose",
         },
     },
 }

@@ -36,7 +36,7 @@ Server will start at: `http://localhost:8000`
 
 ## API Endpoints
 
-### POST /analyze
+### POST /dashboard/analyze
 
 Analyze VCF file for pharmacogenomic risks.
 
@@ -48,7 +48,7 @@ Analyze VCF file for pharmacogenomic risks.
 **Example using curl:**
 
 ```bash
-curl -X POST "http://localhost:8000/analyze" \
+curl -X POST "http://localhost:8000/dashboard/analyze" \
   -F "file=@patient_sample.vcf" \
   -F "drugs=CODEINE,WARFARIN" \
   -F "patient_id=PATIENT_123"
