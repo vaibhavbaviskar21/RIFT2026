@@ -74,10 +74,29 @@ export default function DashboardPage() {
                             <span className="w-8 h-8 border-2 border-white/20 border-t-primary rounded-full animate-spin"></span>
                         </div>
                     )}
+<<<<<<< Updated upstream
 
                     {error && (
                         <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm text-center">
                             {error}
+=======
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  {/* Harmful / Safe Drugs */}
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div className="p-5 rounded-xl bg-red-500/5 border border-red-500/20">
+                      <h4 className="text-sm font-bold text-red-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+                        <AlertTriangle className="w-4 h-4" /> Potentially Harmful
+                      </h4>
+                      {advancedAnalysis.harmful_drugs.length > 0 ? (
+                        <div className="flex flex-wrap gap-2">
+                          {advancedAnalysis.harmful_drugs.map((drug, i) => (
+                            <Badge key={i} variant="danger">
+                              {drug}
+                            </Badge>
+                          ))}
+>>>>>>> Stashed changes
                         </div>
                     )}
 
