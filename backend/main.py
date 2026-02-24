@@ -263,69 +263,55 @@ async def query_drug(request: DrugQueryRequest, current_user = Depends(get_curre
                 detail=f"No genetic data found for {gene}. Please upload your VCF file first."
             )
         
-        variants = [
-            Variant(
-                rsid=v["rsid"],
-                gene=v["gene"],
-                star_allele=v["star_allele"],
-                genotype=v["genotype"],
-                chromosome=v["chromosome"],
-                position=v["position"]
-            )
-            for v in variants_db
-        ]
+        pgx_profiles = await db.get_user_pgx_profiles(str(current_user["id"]))
+        primary_pgx = pgx_profiles[0] if pgx_profiles else None
+        
+        variants_summary = [{
+            "rsid": v["rsid"],
+            "gene": v["gene"],
+            "genotype": v["genotype"],
+            "star_allele": v["star_allele"] if "star_allele" in v and v["star_allele"] else None
+        } for v in all_variants]
         
         diplotype, phenotype = determine_diplotype(variants, gene)
         risk_data = assess_risk(drug_name, phenotype)
         recommendation = get_recommendation(drug_name, phenotype)
         
-        variant_rsids = [v.rsid for v in variants]
-        llm_explanation = generate_explanation(
-            drug=drug_name,
-            gene=gene,
-            diplotype=diplotype,
-            phenotype=phenotype,
-            variants=variant_rsids,
-            guideline=recommendation["guideline_reference"],
-            risk_label=risk_data["risk_label"]
-        )
-        
-        await db.save_drug_analysis(
+        # Save to search history
+        await db.save_search_history(
             user_id=str(current_user["id"]),
-            drug=drug_name,
-            gene=gene,
-            risk_label=risk_data["risk_label"],
-            severity=risk_data["severity"],
-            confidence_score=risk_data["confidence"],
-            phenotype=phenotype,
-            diplotype=diplotype,
-            recommendation=recommendation,
-            llm_explanation=llm_explanation
+            drug_name=drug_name,
+            risk_label=ai_response["risk_label"]
         )
         
-        return DrugAnalysisResponse(
-            patient_id=str(current_user["id"]),
-            drug=drug_name,
-            timestamp=datetime.utcnow().isoformat() + "Z",
-            risk_assessment=RiskAssessment(
-                risk_label=risk_data["risk_label"],
-                confidence_score=risk_data["confidence"],
-                severity=risk_data["severity"]
-            ),
-            pharmacogenomic_profile=PharmacogenomicProfile(
-                primary_gene=gene,
-                diplotype=diplotype,
-                phenotype=phenotype,
-                detected_variants=variants
-            ),
-            clinical_recommendation=ClinicalRecommendation(**recommendation),
-            llm_generated_explanation=LLMExplanation(**llm_explanation),
-            quality_metrics=QualityMetrics(
-                vcf_parsing_success=True,
-                variants_analyzed=len(variants),
-                llm_response_generated=True
-            )
-        )
+        return {
+            "patient_id": str(current_user["id"]),
+            "drug": drug_name,
+            "timestamp": datetime.utcnow().isoformat(),
+
+            "risk_assessment": {
+                "risk_label": ai_response["risk_label"],
+                "severity": ai_response["severity"],
+                "confidence_score": ai_response["confidence_score"]
+            },
+
+            "pharmacogenomic_profile": {
+                "primary_gene": primary_pgx["gene"] if primary_pgx else None,
+                "diplotype": primary_pgx["diplotype"] if primary_pgx else "Unknown",
+                "phenotype": primary_pgx["phenotype"] if primary_pgx else "Unknown",
+                "detected_variants": variants_summary
+            },
+
+            "clinical_recommendation": ai_response["recommendation"],
+
+            "llm_generated_explanation": ai_response["explanation"],
+
+            "quality_metrics": {
+                "vcf_parsing_success": True,
+                "total_variants": len(all_variants),
+                "pgx_profile_available": bool(primary_pgx)
+            }
+        }
         
     except HTTPException:
         raise
@@ -356,6 +342,136 @@ async def get_my_analyses(current_user = Depends(get_current_user)):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get analyses: {str(e)}")
+
+@app.get("/search-history")
+async def get_search_history(current_user = Depends(get_current_user)):
+    """Get user's drug search history"""
+    try:
+        history = await db.get_search_history(str(current_user["id"]))
+        
+        return {
+            "user_id": str(current_user["id"]),
+            "total_searches": len(history),
+            "history": [
+                {
+                    "drug_name": h["drug_name"],
+                    "risk_label": h["risk_label"],
+                    "searched_at": h["searched_at"].isoformat()
+                }
+                for h in history
+            ]
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get search history: {str(e)}")
+
+@app.post("/advanced-analysis")
+async def generate_advanced_analysis(current_user = Depends(get_current_user)):
+    """Generate comprehensive genetic analysis (one-time, saved to DB)"""
+    try:
+        # Check if analysis already exists
+        existing = await db.get_advanced_analysis(str(current_user["id"]))
+        if existing:
+            return {
+                "message": "Analysis already exists",
+                "analysis": {
+                    "harmful_drugs": json.loads(existing["harmful_drugs"]),
+                    "safe_drugs": json.loads(existing["safe_drugs"]),
+                    "recommendations": json.loads(existing["recommendations"]),
+                    "full_report": json.loads(existing["full_report"]),
+                    "created_at": existing["created_at"].isoformat()
+                }
+            }
+        
+        # Get user's genetic data
+        all_variants = await db.get_user_variants(str(current_user["id"]))
+        if not all_variants:
+            raise HTTPException(
+                status_code=404,
+                detail="No genetic data found. Please upload your VCF file first."
+            )
+        
+        pgx_profiles = await db.get_user_pgx_profiles(str(current_user["id"]))
+        
+        variants_summary = [{
+            "rsid": v["rsid"],
+            "gene": v["gene"],
+            "genotype": v["genotype"],
+            "star_allele": v["star_allele"] if "star_allele" in v and v["star_allele"] else None
+        } for v in all_variants]
+        
+        # Generate comprehensive analysis
+        analysis = generate_comprehensive_analysis(variants_summary, pgx_profiles)
+        
+        # Save to database
+        await db.save_advanced_analysis(str(current_user["id"]), analysis)
+        
+        return {
+            "message": "Advanced analysis generated successfully",
+            "analysis": analysis
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Advanced analysis failed: {str(e)}")
+
+@app.get("/advanced-analysis")
+async def get_advanced_analysis(current_user = Depends(get_current_user)):
+    """Get user's saved advanced analysis"""
+    try:
+        analysis = await db.get_advanced_analysis(str(current_user["id"]))
+        
+        if not analysis:
+            raise HTTPException(
+                status_code=404,
+                detail="No advanced analysis found. Generate one first using POST /advanced-analysis"
+            )
+        
+        return {
+            "user_id": str(current_user["id"]),
+            "analysis": {
+                "harmful_drugs": json.loads(analysis["harmful_drugs"]),
+                "safe_drugs": json.loads(analysis["safe_drugs"]),
+                "recommendations": json.loads(analysis["recommendations"]),
+                "full_report": json.loads(analysis["full_report"]),
+                "created_at": analysis["created_at"].isoformat()
+            }
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get advanced analysis: {str(e)}")
+
+        raise HTTPException(status_code=500, detail=f"Advanced analysis failed: {str(e)}")
+
+@app.get("/advanced-analysis")
+async def get_advanced_analysis(current_user = Depends(get_current_user)):
+    """Get user's saved advanced analysis"""
+    try:
+        analysis = await db.get_advanced_analysis(str(current_user["id"]))
+        
+        if not analysis:
+            raise HTTPException(
+                status_code=404,
+                detail="No advanced analysis found. Generate one first using POST /advanced-analysis"
+            )
+        
+        return {
+            "user_id": str(current_user["id"]),
+            "analysis": {
+                "harmful_drugs": json.loads(analysis["harmful_drugs"]),
+                "safe_drugs": json.loads(analysis["safe_drugs"]),
+                "recommendations": json.loads(analysis["recommendations"]),
+                "full_report": json.loads(analysis["full_report"]),
+                "created_at": analysis["created_at"].isoformat()
+            }
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get advanced analysis: {str(e)}")
 
 @app.get("/")
 async def root():

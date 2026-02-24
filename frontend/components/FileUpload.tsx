@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
-import {
-    UploadCloud, File as FileIcon, X, CheckCircle,
-    AlertTriangle, Lock, Dna, FileCheck2
-} from "lucide-react";
+import { useState, useCallback } from "react";
+import { UploadCloud, File, X, CheckCircle, Loader2 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { authFetch } from "@/lib/auth";
+import { Button } from "@/components/ui/button";
 
 const MAX_FILE_SIZE_MB = 5;
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
@@ -22,32 +22,8 @@ interface Toast {
 export default function FileUpload({ onFileSelect }: FileUploadProps) {
     const [isDragging, setIsDragging] = useState(false);
     const [file, setFile] = useState<File | null>(null);
-    const [isUploading, setIsUploading] = useState(false);
-    const [toasts, setToasts] = useState<Toast[]>([]);
-    const inputRef = useRef<HTMLInputElement>(null);
-    const toastId = useRef(0);
-
-    const showToast = (message: string, type: "error" | "success" = "error") => {
-        const id = ++toastId.current;
-        setToasts(prev => [...prev, { id, message, type }]);
-        setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 4000);
-    };
-
-    const validateFile = (f: File): boolean => {
-        if (!f.name.endsWith(".vcf")) {
-            showToast("Invalid file format. Only VCF (.vcf) files are accepted.", "error");
-            return false;
-        }
-        if (f.size > MAX_FILE_SIZE_BYTES) {
-            showToast(`File exceeds ${MAX_FILE_SIZE_MB}MB size limit (${(f.size / 1024 / 1024).toFixed(1)}MB).`, "error");
-            return false;
-        }
-        if (f.size === 0) {
-            showToast("The selected file is empty.", "error");
-            return false;
-        }
-        return true;
-    };
+    const [uploading, setUploading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
 
     const handleDrag = useCallback((e: React.DragEvent) => {
         e.preventDefault();
@@ -68,30 +44,49 @@ export default function FileUpload({ onFileSelect }: FileUploadProps) {
             const droppedFile = e.dataTransfer.files[0];
             if (validateFile(droppedFile)) {
                 setFile(droppedFile);
+                setError(null);
+            } else {
+                setError("Please upload a valid .vcf file");
             }
         }
     }, []);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
-            const selectedFile = e.target.files[0];
-            if (validateFile(selectedFile)) {
-                setFile(selectedFile);
-            }
+            setFile(e.target.files[0]);
+            setError(null);
         }
     };
 
     const removeFile = () => {
         setFile(null);
-        setIsUploading(false);
-        if (inputRef.current) inputRef.current.value = "";
+        setError(null);
     };
 
-    const handleUpload = () => {
-        if (!file || isUploading) return;
-        setIsUploading(true);
-        if (onFileSelect) {
-            onFileSelect(file);
+    const handleUpload = async () => {
+        if (!file) return;
+        setUploading(true);
+        setError(null);
+
+        try {
+            const formData = new FormData();
+            formData.append("file", file);
+
+            const res = await authFetch("/upload-vcf", {
+                method: "POST",
+                body: formData,
+            });
+
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ detail: "Upload failed" }));
+                throw new Error(err.detail || "Upload failed");
+            }
+
+            router.push("/analyze");
+        } catch (err: any) {
+            setError(err.message || "Failed to upload file");
+        } finally {
+            setUploading(false);
         }
     };
 
@@ -220,19 +215,27 @@ export default function FileUpload({ onFileSelect }: FileUploadProps) {
                             <span>File size</span>
                             <span className="font-mono">{fileSizeMB} / {MAX_FILE_SIZE_MB}.00 MB</span>
                         </div>
-                        <div className="w-full h-1 rounded-full bg-white/[0.04] overflow-hidden">
-                            <div
-                                className={`h-full rounded-full transition-all duration-500 ${sizePercent > 90 ? "bg-red-500" : sizePercent > 70 ? "bg-amber-500" : "bg-emerald-500"
-                                    }`}
-                                style={{ width: `${sizePercent}%` }}
-                            />
-                        </div>
-                    </div>
-
-                    {/* Validation Badge */}
-                    <div className="flex items-center gap-2 text-[12px] text-emerald-400/80 mb-5 px-3 py-2 rounded-lg bg-emerald-500/[0.04] border border-emerald-500/10">
-                        <CheckCircle className="w-3.5 h-3.5 flex-shrink-0" />
-                        <span>File validated — ready for genomic parsing</span>
+                        {error && (
+                            <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+                                {error}
+                            </div>
+                        )}
+                        <Button
+                            onClick={handleUpload}
+                            disabled={uploading}
+                            variant="glow"
+                            size="lg"
+                            className="w-full"
+                        >
+                            {uploading ? (
+                                <>
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                    Uploading...
+                                </>
+                            ) : (
+                                "Process Genome"
+                            )}
+                        </Button>
                     </div>
 
                     <button
