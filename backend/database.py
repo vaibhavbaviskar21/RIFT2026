@@ -2,6 +2,9 @@ from databases import Database
 from typing import Optional, List, Dict
 import os
 from datetime import datetime
+import logging
+
+logger = logging.getLogger(__name__)
 
 class DatabaseService:
     """
@@ -222,5 +225,20 @@ class DatabaseService:
             return analyses
         except Exception as e:
             raise Exception(f"Failed to get drug analyses: {str(e)}")
+    async def delete_user_variants(self, user_id: str):
+        try:
+          query = "DELETE FROM genetic_variants WHERE user_id = :user_id"
+          await self.database.execute(query=query, values={"user_id": user_id})
+          logger.info(f"Deleted variants for user {user_id}")
+        except Exception as e:
+            raise Exception(f"Failed to delete variants: {str(e)}")
+    async def delete_user_pgx_profiles(self, user_id: str):
+        try:
+            query = "DELETE FROM user_pgx_profiles WHERE user_id = :user_id"
+            await self.database.execute(query=query, values={"user_id": user_id})
+            logger.info(f"Deleted PGx profiles for user {user_id}")
+        except Exception as e:
+            raise Exception(f"Failed to delete PGx profiles: {str(e)}")
+    
 
 db = DatabaseService()
